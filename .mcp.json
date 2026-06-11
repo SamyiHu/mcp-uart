@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "uart": {
-      "command": "node",
-      "args": ["C:\\Users\\SOC\\Desktop\\小程序\\MCP_Uart\\dist\\index.js"]
-    }
-  }
-}
