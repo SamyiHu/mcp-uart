@@ -1,0 +1,48 @@
+{
+  "name": "mcp-uart",
+  "version": "1.0.0",
+  "description": "Serial Port MCP Server for AI agents — tools for reading, writing, and monitoring UART/serial devices",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "mcp-uart": "dist/index.js",
+    "serial-monitor": "dist/monitor.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch",
+    "prepare": "npm run build"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "mcp",
+    "serial",
+    "uart",
+    "serialport",
+    "claude",
+    "modbus",
+    "embedded",
+    "iot",
+    "ai-agent"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@serialport/parser-delimiter": "^13.0.0",
+    "@serialport/parser-readline": "^13.0.0",
+    "iconv-lite": "^0.7.2",
+    "serialport": "^13.0.0",
+    "uuid": "^14.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.2",
+    "@types/uuid": "^10.0.0",
+    "typescript": "^6.0.3"
+  }
+}
