@@ -87,7 +87,7 @@
 <header>
   <span id="dot" class="dot"></span>
   <h1>UART Hub</h1>
-  <span id="connLabel" class="pill">未连�?/span>
+  <span id="connLabel" class="pill">未连接</span>
   <span class="spacer"></span>
   <span class="meta" id="seqLabel">seq 0</span>
   <span class="meta" id="countLabel">0 frames</span>
@@ -99,7 +99,7 @@
     <datalist id="portList"></datalist>
   </label>
   <div class="rowbtns"><button id="btnRefresh" type="button">刷新端口</button></div>
-  <label><span>波特�?/span>
+  <label><span>波特率</span>
     <select id="baud">
       <option>9600</option><option>19200</option><option>38400</option>
       <option>57600</option><option selected>115200</option>
@@ -107,8 +107,8 @@
       <option value="727000">727000 (W6729)</option>
     </select>
   </label>
-  <label><span>数据�?/span><select id="dataBits"><option>8</option><option>7</option></select></label>
-  <label><span>停止�?/span><select id="stopBits"><option>1</option><option>2</option></select></label>
+  <label><span>数据位</span><select id="dataBits"><option>8</option><option>7</option></select></label>
+  <label><span>停止位</span><select id="stopBits"><option>1</option><option>2</option></select></label>
   <label><span>校验</span>
     <select id="parity"><option value="none">none</option><option value="even">even</option><option value="odd">odd</option></select>
   </label>
@@ -132,7 +132,7 @@
       <option value="slip">slip</option>
     </select>
   </label>
-  <label><span>分隔�?hex, delimiter�?</span><input id="delimiter" placeholder="0D0A"/></label>
+  <label><span>分隔符 (hex, delimiter 用)</span><input id="delimiter" placeholder="0D0A"/></label>
   <div class="checks">
     <label><input type="checkbox" id="dtr" checked/> DTR</label>
     <label><input type="checkbox" id="rts" checked/> RTS</label>
@@ -148,18 +148,18 @@
     <button id="btnBreak" type="button" disabled>Break</button>
   </div>
   <h2>应用配置</h2>
-  <div class="rowbtns"><button id="btnApply" type="button" disabled>应用到当前连�?/button></div>
-  <p style="color:var(--muted);font-size:11px;margin-top:16px;">仅绑�?127.0.0.1。与 MCP 共用串口时请避免同时打开同一 COM�?/p>
+  <div class="rowbtns"><button id="btnApply" type="button" disabled>应用到当前连接</button></div>
+  <p style="color:var(--muted);font-size:11px;margin-top:16px;">仅绑定 127.0.0.1。与 MCP 共用串口时请避免同时打开同一 COM。</p>
 </aside>
 <main>
   <div class="statusline" id="statusLine">就绪</div>
   <section class="toolbar">
     <select id="filterDir">
       <option value="all">全部 TX+RX</option>
-      <option value="rx">�?RX</option>
-      <option value="tx">�?TX</option>
+      <option value="rx">仅 RX</option>
+      <option value="tx">仅 TX</option>
     </select>
-    <input id="filterHex" placeholder="过滤 hex 包含, �?AA55" style="width:180px"/>
+    <input id="filterHex" placeholder="过滤 hex 包含, 如 AA55" style="width:180px"/>
     <input id="filterText" placeholder="过滤文本" style="width:140px"/>
     <label style="display:flex;align-items:center;gap:6px;margin:0;color:var(--ink)">
       <input type="checkbox" id="follow" checked/> 跟随
@@ -171,8 +171,8 @@
   </section>
   <div class="frames" id="frames"><div class="empty">连接后显示实时帧</div></div>
   <div class="sendbar">
-    <textarea id="sendData" placeholder="发送内容（按上方编码；hex 时可�?01 02 AA55 �?0102AA55）。Ctrl+Enter 发�?></textarea>
-    <button id="btnSend" class="primary" type="button" disabled>发�?/button>
+    <textarea id="sendData" placeholder="发送内容（按上方编码；hex 时可写 01 02 AA55 或 0102AA55）。Ctrl+Enter 发送"></textarea>
+    <button id="btnSend" class="primary" type="button" disabled>发送</button>
   </div>
 </main>
 <script src="/static/app.js"></script>

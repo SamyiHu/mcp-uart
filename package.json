@@ -1,6 +1,6 @@
 {
   "name": "mcp-uart",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Serial Port MCP Server for AI agents — structured output, precise extract/filters, HTML visualize, profile-driven DUT/FT runner (W6729 etc.)",
   "main": "dist/index.js",
   "type": "module",
