@@ -6,113 +6,334 @@
 <title>UART Hub</title>
 <style>
   :root {
-    --bg:#0f1419; --panel:#1a2332; --panel2:#141c28; --ink:#e7ecf3; --muted:#8b9bb4;
-    --line:#2a3548; --tx:#3d9cf0; --rx:#3ecf8e; --err:#f07178; --accent:#7aa2f7;
+    --void: #0b0e12;
+    --panel: #151c24;
+    --panel-2: #10161d;
+    --ink: #e8eef5;
+    --mute: #8b9aab;
+    --line: #243041;
+    --tx: #3b82f6;
+    --rx: #22c55e;
+    --amber: #f59e0b;
+    --err: #f87171;
+    --ring: rgba(59, 130, 246, 0.55);
+    --radius: 8px;
+    --font: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --mono: ui-monospace, "Cascadia Code", Consolas, "SF Mono", monospace;
   }
-  * { box-sizing:border-box; }
-  html, body { height:100%; margin:0; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
   body {
-    font:13px/1.45 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
-    background:var(--bg); color:var(--ink); overflow:hidden;
-    display:grid; grid-template-columns:300px 1fr; grid-template-rows:48px 1fr;
+    font: 13px/1.45 var(--font);
+    background: var(--void);
+    color: var(--ink);
+    display: grid;
+    grid-template-columns: 288px minmax(0, 1fr);
+    grid-template-rows: 44px minmax(0, 1fr);
+    overflow: hidden;
   }
-  header {
-    grid-column:1 / -1; display:flex; align-items:center; gap:12px;
-    padding:0 16px; border-bottom:1px solid var(--line); background:var(--panel2);
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
   }
-  header h1 { margin:0; font-size:14px; font-weight:600; letter-spacing:.02em; }
-  .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); }
-  .dot.on { background:var(--rx); box-shadow:0 0 8px rgba(62,207,142,.6); }
-  .spacer { flex:1; }
-  .meta { color:var(--muted); font-size:12px; font-family:ui-monospace,Consolas,monospace; }
-  aside { border-right:1px solid var(--line); background:var(--panel2); overflow:auto; padding:14px; }
-  main { display:grid; grid-template-rows:auto 1fr auto; min-width:0; min-height:0; }
-  section.toolbar {
-    display:flex; gap:8px; align-items:center; flex-wrap:wrap;
-    padding:10px 12px; border-bottom:1px solid var(--line); background:var(--panel2);
+
+  /* — instrument strip — */
+  .strip {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 14px;
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--line);
   }
-  .frames {
-    overflow:auto; padding:10px 12px; font-family:ui-monospace,Consolas,monospace;
-    font-size:12px; background:var(--bg);
+  .strip .brand {
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
   }
-  .row {
-    display:grid; grid-template-columns: 84px 36px 52px 1fr; gap:8px;
-    padding:3px 6px; border-radius:4px; align-items:baseline;
+  .led {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #4b5563;
+    flex: none;
   }
-  .row:hover { background:rgba(255,255,255,.03); }
-  .row.tx { background:rgba(61,156,240,.08); }
-  .row.rx { background:rgba(62,207,142,.08); }
-  .dir { font-weight:700; }
-  .dir.tx { color:var(--tx); }
-  .dir.rx { color:var(--rx); }
-  .t { color:var(--muted); }
-  .n { color:var(--muted); text-align:right; }
-  .hex { color:var(--ink); word-break:break-all; }
-  .ascii { color:var(--muted); }
-  .sendbar {
-    display:flex; gap:8px; padding:10px 12px; border-top:1px solid var(--line);
-    background:var(--panel2); align-items:center;
+  .led.on {
+    background: var(--rx);
+    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15), 0 0 10px rgba(34, 197, 94, 0.7);
   }
-  .sendbar textarea {
-    flex:1; min-height:40px; resize:vertical; background:var(--bg); color:var(--ink);
-    border:1px solid var(--line); border-radius:8px; padding:8px 10px;
-    font:12px/1.4 ui-monospace,Consolas,monospace;
+  .led.warn { background: var(--amber); box-shadow: 0 0 8px rgba(245, 158, 11, 0.55); }
+  .conn-pill {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    color: var(--mute);
+    background: var(--panel);
   }
-  h2 { margin:0 0 10px; font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
-  label { display:block; margin:0 0 10px; color:var(--muted); font-size:11px; }
-  label span { display:block; margin-bottom:4px; }
-  input, select, button {
-    font:inherit; color:var(--ink); background:var(--bg); border:1px solid var(--line);
-    border-radius:8px; padding:7px 10px;
+  .conn-pill.on {
+    color: #86efac;
+    border-color: rgba(34, 197, 94, 0.35);
+    background: rgba(34, 197, 94, 0.08);
   }
-  input, select { width:100%; }
-  button { cursor:pointer; background:var(--panel); }
-  button:hover { border-color:var(--accent); }
-  button.primary { background:rgba(122,162,247,.18); border-color:rgba(122,162,247,.5); }
-  button.danger { background:rgba(240,113,120,.12); border-color:rgba(240,113,120,.45); color:#ffb3b8; }
-  button:disabled { opacity:.45; cursor:not-allowed; }
-  .rowbtns { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
-  .rowbtns button { flex:1; min-width:64px; }
-  .checks { display:flex; gap:12px; margin:0 0 12px; }
-  .checks label { display:flex; align-items:center; gap:6px; margin:0; color:var(--ink); font-size:12px; }
-  .statusline { padding:8px 12px; border-bottom:1px solid var(--line); color:var(--muted); font-size:12px; }
-  .empty { color:var(--muted); padding:24px; text-align:center; }
-  .pill {
-    display:inline-block; padding:2px 8px; border-radius:99px; font-size:11px;
-    background:rgba(122,162,247,.15); color:var(--accent);
+  .strip .grow { flex: 1; }
+  .strip .meta {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--mute);
+  }
+
+  /* — config rail — */
+  .rail {
+    background: var(--panel-2);
+    border-right: 1px solid var(--line);
+    overflow: auto;
+    padding: 14px 14px 24px;
+  }
+  .rail h2 {
+    margin: 0 0 10px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--mute);
+  }
+  .rail h2:not(:first-child) { margin-top: 18px; }
+  .field { margin: 0 0 10px; }
+  .field > span {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 11px;
+    color: var(--mute);
+  }
+  .field input, .field select {
+    width: 100%;
+    color: var(--ink);
+    background: var(--void);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 7px 9px;
+    font: inherit;
+  }
+  .field input:hover, .field select:hover { border-color: #334155; }
+  .inline-checks {
+    display: flex;
+    gap: 14px;
+    margin: 0 0 12px;
+  }
+  .inline-checks label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--ink);
+    font-size: 12px;
+  }
+  .btn-row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  button {
+    font: inherit;
+    color: var(--ink);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 7px 10px;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: #475569; background: #1a2330; }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary {
+    background: rgba(59, 130, 246, 0.16);
+    border-color: rgba(59, 130, 246, 0.45);
+    color: #bfdbfe;
+  }
+  button.primary:hover:not(:disabled) {
+    background: rgba(59, 130, 246, 0.24);
+    border-color: rgba(59, 130, 246, 0.7);
+  }
+  button.danger {
+    background: rgba(248, 113, 113, 0.1);
+    border-color: rgba(248, 113, 113, 0.4);
+    color: #fecaca;
+  }
+  button.danger:hover:not(:disabled) {
+    background: rgba(248, 113, 113, 0.18);
+    border-color: rgba(248, 113, 113, 0.65);
+  }
+  button.ghost { background: transparent; }
+  .btn-row button { flex: 1; min-width: 0; }
+  .note {
+    margin: 14px 0 0;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--mute);
+  }
+
+  /* — main tape — */
+  main {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    min-width: 0;
+    min-height: 0;
+    background: var(--void);
+  }
+  .status {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--line);
+    font-size: 12px;
+    color: var(--mute);
+    background: var(--panel-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .status.error { color: #fecaca; }
+  .status.ok { color: #86efac; }
+  .tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel-2);
+  }
+  .tools select, .tools input[type="text"] {
+    color: var(--ink);
+    background: var(--void);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 6px 8px;
+    font: inherit;
+  }
+  .tools label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--ink);
+    font-size: 12px;
+    margin: 0;
+  }
+  .tape {
+    overflow: auto;
+    padding: 0;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .empty {
+    color: var(--mute);
+    padding: 48px 16px;
+    text-align: center;
+  }
+  .empty strong { display: block; color: var(--ink); margin-bottom: 6px; font-weight: 600; }
+  .empty span { font-size: 12px; }
+  .frame {
+    display: grid;
+    grid-template-columns: 10px 88px 28px 48px minmax(0, 1fr);
+    gap: 0;
+    border-bottom: 1px solid rgba(36, 48, 65, 0.55);
+    min-height: 28px;
+    align-items: stretch;
+  }
+  .frame:hover { background: rgba(255, 255, 255, 0.02); }
+  .frame .rail-tx, .frame .rail-rx { width: 3px; }
+  .frame.tx .rail-tx { background: var(--tx); }
+  .frame.rx .rail-rx { background: var(--rx); }
+  .frame .c-time, .frame .c-dir, .frame .c-n, .frame .c-data {
+    display: flex;
+    align-items: center;
+    padding: 4px 8px;
+  }
+  .frame .c-time { color: var(--mute); font-size: 11px; }
+  .frame .c-dir { font-weight: 700; font-size: 11px; letter-spacing: 0.04em; }
+  .frame.tx .c-dir { color: #93c5fd; }
+  .frame.rx .c-dir { color: #86efac; }
+  .frame .c-n { color: var(--mute); justify-content: flex-end; font-size: 11px; }
+  .frame .c-data { word-break: break-all; gap: 12px; }
+  .frame .hex { color: var(--ink); }
+  .frame .ascii { color: var(--mute); }
+  .send {
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px;
+    border-top: 1px solid var(--line);
+    background: var(--panel-2);
+    align-items: stretch;
+  }
+  .send textarea {
+    flex: 1;
+    min-height: 44px;
+    resize: vertical;
+    color: var(--ink);
+    background: var(--void);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 8px 10px;
+    font: 12px/1.4 var(--mono);
+  }
+  .send button { min-width: 88px; }
+  .hint {
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--mute);
+  }
+
+  @media (max-width: 820px) {
+    body { grid-template-columns: 1fr; grid-template-rows: 44px auto minmax(0, 1fr); }
+    .rail { border-right: 0; border-bottom: 1px solid var(--line); max-height: 42vh; }
+    .frame { grid-template-columns: 6px 76px 24px 40px minmax(0, 1fr); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
   }
 </style>
 </head>
 <body>
-<header>
-  <span id="dot" class="dot"></span>
-  <h1>UART Hub</h1>
-  <span id="connLabel" class="pill">未连接</span>
-  <span class="spacer"></span>
+<header class="strip">
+  <span id="led" class="led" title="连接状态"></span>
+  <span class="brand">UART Hub</span>
+  <span id="connLabel" class="conn-pill">未连接</span>
+  <span class="grow"></span>
   <span class="meta" id="seqLabel">seq 0</span>
-  <span class="meta" id="countLabel">0 frames</span>
+  <span class="meta" id="countLabel">0 帧</span>
 </header>
-<aside>
-  <h2>连接配置</h2>
-  <label><span>端口</span>
+
+<aside class="rail">
+  <h2>连接</h2>
+  <div class="field"><span>串口</span>
     <input id="path" list="portList" placeholder="COM5" autocomplete="off"/>
     <datalist id="portList"></datalist>
-  </label>
-  <div class="rowbtns"><button id="btnRefresh" type="button">刷新端口</button></div>
-  <label><span>波特率</span>
+  </div>
+  <div class="btn-row">
+    <button id="btnRefresh" type="button" class="ghost">刷新端口</button>
+  </div>
+  <div class="field"><span>波特率</span>
     <select id="baud">
-      <option>9600</option><option>19200</option><option>38400</option>
-      <option>57600</option><option selected>115200</option>
-      <option>230400</option><option>460800</option><option>921600</option>
-      <option value="727000">727000 (W6729)</option>
+      <option>9600</option>
+      <option>19200</option>
+      <option>38400</option>
+      <option>57600</option>
+      <option selected>115200</option>
+      <option>230400</option>
+      <option>460800</option>
+      <option>921600</option>
+      <option value="727000">727000（W6729）</option>
     </select>
-  </label>
-  <label><span>数据位</span><select id="dataBits"><option>8</option><option>7</option></select></label>
-  <label><span>停止位</span><select id="stopBits"><option>1</option><option>2</option></select></label>
-  <label><span>校验</span>
-    <select id="parity"><option value="none">none</option><option value="even">even</option><option value="odd">odd</option></select>
-  </label>
-  <label><span>编码</span>
+  </div>
+  <div class="field"><span>数据位</span>
+    <select id="dataBits"><option>8</option><option>7</option></select>
+  </div>
+  <div class="field"><span>停止位</span>
+    <select id="stopBits"><option>1</option><option>2</option></select>
+  </div>
+  <div class="field"><span>校验</span>
+    <select id="parity">
+      <option value="none">none</option>
+      <option value="even">even</option>
+      <option value="odd">odd</option>
+    </select>
+  </div>
+  <div class="field"><span>编码</span>
     <select id="encoding">
       <option value="utf8">utf8</option>
       <option value="hex">hex</option>
@@ -121,8 +342,8 @@
       <option value="latin1">latin1</option>
       <option value="base64">base64</option>
     </select>
-  </label>
-  <label><span>协议</span>
+  </div>
+  <div class="field"><span>协议</span>
     <select id="protocol">
       <option value="raw" selected>raw</option>
       <option value="line">line</option>
@@ -131,47 +352,55 @@
       <option value="hex-frame">hex-frame</option>
       <option value="slip">slip</option>
     </select>
-  </label>
-  <label><span>分隔符 (hex, delimiter 用)</span><input id="delimiter" placeholder="0D0A"/></label>
-  <div class="checks">
+  </div>
+  <div class="field"><span>分隔符 hex（delimiter）</span>
+    <input id="delimiter" placeholder="0D0A"/>
+  </div>
+  <div class="inline-checks">
     <label><input type="checkbox" id="dtr" checked/> DTR</label>
     <label><input type="checkbox" id="rts" checked/> RTS</label>
   </div>
-  <div class="rowbtns">
+  <div class="btn-row">
     <button id="btnConnect" class="primary" type="button">连接</button>
     <button id="btnDisconnect" class="danger" type="button" disabled>断开</button>
   </div>
+
   <h2>信号</h2>
-  <div class="rowbtns">
-    <button id="btnDtr" type="button" disabled>DTR</button>
-    <button id="btnRts" type="button" disabled>RTS</button>
-    <button id="btnBreak" type="button" disabled>Break</button>
+  <div class="btn-row">
+    <button id="btnDtr" type="button" disabled class="ghost">DTR</button>
+    <button id="btnRts" type="button" disabled class="ghost">RTS</button>
+    <button id="btnBreak" type="button" disabled class="ghost">Break</button>
   </div>
-  <h2>应用配置</h2>
-  <div class="rowbtns"><button id="btnApply" type="button" disabled>应用到当前连接</button></div>
-  <p style="color:var(--muted);font-size:11px;margin-top:16px;">仅绑定 127.0.0.1。与 MCP 共用串口时请避免同时打开同一 COM。</p>
+
+  <h2>在线改参</h2>
+  <div class="btn-row">
+    <button id="btnApply" type="button" disabled>应用到当前连接</button>
+  </div>
+  <p class="note">仅监听 127.0.0.1。与 MCP 同时打开同一 COM 会被系统互斥占用。若 8787 被示波器等占用，Hub 会自动换端口。</p>
 </aside>
+
 <main>
-  <div class="statusline" id="statusLine">就绪</div>
-  <section class="toolbar">
-    <select id="filterDir">
+  <div class="status" id="statusLine">就绪 — 选择串口后点「连接」</div>
+  <div class="tools">
+    <select id="filterDir" aria-label="方向过滤">
       <option value="all">全部 TX+RX</option>
       <option value="rx">仅 RX</option>
       <option value="tx">仅 TX</option>
     </select>
-    <input id="filterHex" placeholder="过滤 hex 包含, 如 AA55" style="width:180px"/>
-    <input id="filterText" placeholder="过滤文本" style="width:140px"/>
-    <label style="display:flex;align-items:center;gap:6px;margin:0;color:var(--ink)">
-      <input type="checkbox" id="follow" checked/> 跟随
-    </label>
-    <label style="display:flex;align-items:center;gap:6px;margin:0;color:var(--ink)">
-      <input type="checkbox" id="showAscii" checked/> ASCII
-    </label>
-    <button id="btnClear" type="button">清空显示</button>
-  </section>
-  <div class="frames" id="frames"><div class="empty">连接后显示实时帧</div></div>
-  <div class="sendbar">
-    <textarea id="sendData" placeholder="发送内容（按上方编码；hex 时可写 01 02 AA55 或 0102AA55）。Ctrl+Enter 发送"></textarea>
+    <input id="filterHex" type="text" placeholder="hex 包含 AA55" style="width:160px" aria-label="hex 过滤"/>
+    <input id="filterText" type="text" placeholder="文本过滤" style="width:130px" aria-label="文本过滤"/>
+    <label><input type="checkbox" id="follow" checked/> 跟随</label>
+    <label><input type="checkbox" id="showAscii" checked/> ASCII</label>
+    <button id="btnClear" type="button" class="ghost">清空</button>
+  </div>
+  <div class="tape" id="frames">
+    <div class="empty">
+      <strong>暂无帧</strong>
+      <span>连接成功后，TX/RX 会以双色轨实时写入这卷胶带</span>
+    </div>
+  </div>
+  <div class="send">
+    <textarea id="sendData" placeholder="发送内容（按上方编码；hex 可写 01 02 AA55）。Ctrl+Enter 发送"></textarea>
     <button id="btnSend" class="primary" type="button" disabled>发送</button>
   </div>
 </main>

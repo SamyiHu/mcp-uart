@@ -408,3 +408,38 @@ export async function createHub(opts: HubOptions): Promise<HubHandle> {
     },
   };
 }
+
+/**
+ * Listen on preferredPort; if busy (e.g. scope host holds 8787), walk up
+ * to preferredPort+span, then fall back to an ephemeral port (0).
+ */
+export type HubListenResult = HubHandle & {
+  preferredPort: number;
+  autoShifted: boolean;
+};
+
+export async function createHubWithFallback(
+  opts: HubOptions & { preferredPort?: number; portSpan?: number }
+): Promise<HubListenResult> {
+  const preferredPort = opts.preferredPort ?? 8787;
+  const span = opts.portSpan ?? 30;
+  const tried: number[] = [];
+  let lastErr: unknown;
+
+  for (const port of [preferredPort, ...Array.from({ length: span }, (_, i) => preferredPort + i + 1), 0]) {
+    if (tried.includes(port)) continue;
+    tried.push(port);
+    try {
+      const hub = await createHub({ ...opts, port });
+      return { ...hub, preferredPort, autoShifted: port !== preferredPort };
+    } catch (err: any) {
+      const code = err?.code;
+      if (code === "EADDRINUSE" || code === "EACCES") {
+        lastErr = err;
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr ?? new Error(`Could not bind any port from ${preferredPort}..${preferredPort + span}`);
+}

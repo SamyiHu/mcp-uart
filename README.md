@@ -176,12 +176,13 @@ One page: **left = config** (port/baud/encoding/DTR/RTS/Break), **right = live m
 npm run hub
 # or
 npx mcp-uart-hub --port 8787
-# open http://127.0.0.1:8787
+# open the URL printed on stderr (default http://127.0.0.1:8787)
 ```
 
 Notes:
 
 - Binds **127.0.0.1 only**
+- **Auto port fallback**: if 8787 is busy (e.g. another host app), tries 8788… then ephemeral. Use `--strict-port` to fail instead, `--port-span N` to change scan width.
 - Single connection policy: opening a new port closes the previous one
 - Avoid opening the same COM in MCP at the same time as Hub (OS exclusive lock)
 - API: `GET /api/health|ports|status|frames`, `POST /api/connect|disconnect|write|config|signals`, `GET /events/stream` (SSE)

@@ -9,11 +9,17 @@
   const $ = (id) => document.getElementById(id);
   const framesEl = $("frames");
 
-  function setStatus(text) { $("statusLine").textContent = text; }
+  function setStatus(text, kind) {
+    const el = $("statusLine");
+    el.textContent = text;
+    el.classList.remove("error", "ok");
+    if (kind) el.classList.add(kind);
+  }
 
   function setConnected(on, id) {
     connectionId = id || null;
-    $("dot").className = "dot" + (on ? " on" : "");
+    $("led").className = "led" + (on ? " on" : "");
+    $("connLabel").className = "conn-pill" + (on ? " on" : "");
     $("connLabel").textContent = on ? "已连接 " + (id || "") : "未连接";
     $("btnConnect").disabled = on;
     $("btnDisconnect").disabled = !on;
@@ -32,7 +38,10 @@
     try {
       const d = new Date(iso);
       const p = (n, w) => String(n).padStart(w || 2, "0");
-      return p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds()) + "." + p(d.getMilliseconds(), 3);
+      return (
+        p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds()) +
+        "." + p(d.getMilliseconds(), 3)
+      );
     } catch (e) {
       return iso;
     }
@@ -51,24 +60,35 @@
     return out;
   }
 
+  function emptyTape(filtered) {
+    if (buffer.length === 0) {
+      return '<div class="empty"><strong>暂无帧</strong><span>连接成功后，TX/RX 会以双色轨实时写入这卷胶带</span></div>';
+    }
+    return '<div class="empty"><strong>无匹配帧</strong><span>试试放宽过滤，或点「清空」</span></div>';
+  }
+
   function render(list) {
     if (!list.length) {
-      framesEl.innerHTML = '<div class="empty">无匹配帧</div>';
+      framesEl.innerHTML = emptyTape(true);
       return;
     }
     const showAscii = $("showAscii").checked;
     const html = list.slice(-800).map((m) => {
-      const dir = m.direction === "tx" ? "TX" : "RX";
-      const cls = m.direction === "tx" ? "tx" : "rx";
+      const tx = m.direction === "tx";
+      const dir = tx ? "TX" : "RX";
+      const cls = tx ? "tx" : "rx";
       const hex = prettyHex(m.raw);
       const ascii = sanitizeAscii(m.data);
-      return '<div class="row ' + cls + '">' +
-        '<span class="t">' + esc(fmtTime(m.timestamp)) + "</span>" +
-        '<span class="dir ' + cls + '">' + dir + "</span>" +
-        '<span class="n">' + m.length + "B</span>" +
-        '<span><span class="hex">' + esc(hex) + "</span>" +
-        (showAscii ? '<span class="ascii">  ' + esc(ascii) + "</span>" : "") +
-        "</span></div>";
+      return (
+        '<div class="frame ' + cls + '">' +
+        '<div class="' + (tx ? "rail-tx" : "rail-rx") + '"></div>' +
+        '<div class="c-time">' + esc(fmtTime(m.timestamp)) + "</div>" +
+        '<div class="c-dir">' + dir + "</div>" +
+        '<div class="c-n">' + m.length + "B</div>" +
+        '<div class="c-data"><span class="hex">' + esc(hex) + "</span>" +
+        (showAscii ? '<span class="ascii">' + esc(ascii) + "</span>" : "") +
+        "</div></div>"
+      );
     }).join("");
     framesEl.innerHTML = html;
     if ($("follow").checked) framesEl.scrollTop = framesEl.scrollHeight;
@@ -84,7 +104,7 @@
     if (tx) list = list.filter((m) => (m.data || "").includes(tx));
     render(list);
     $("seqLabel").textContent = "seq " + lastSeq;
-    $("countLabel").textContent = list.length + " frames";
+    $("countLabel").textContent = list.length + " 帧";
   }
 
   function onFrame(m) {
@@ -112,12 +132,12 @@
     try {
       const data = await api("/api/ports");
       const dl = $("portList");
-      dl.innerHTML = data.ports.map((p) =>
-        '<option value="' + esc(p.path) + '">' + esc(p.manufacturer || "") + "</option>"
-      ).join("");
-      setStatus("端口 " + data.ports.length + " 个");
+      dl.innerHTML = data.ports
+        .map((p) => '<option value="' + esc(p.path) + '">' + esc(p.manufacturer || "") + "</option>")
+        .join("");
+      setStatus("发现 " + data.ports.length + " 个串口", "ok");
     } catch (e) {
-      setStatus("刷新端口失败: " + e.message);
+      setStatus("刷新端口失败: " + e.message, "error");
     }
   }
 
@@ -131,17 +151,18 @@
     });
     es.addEventListener("close", () => {
       setConnected(false, null);
-      setStatus("连接已关闭");
+      setStatus("连接已关闭", "error");
     });
     es.onerror = () => {
-      setStatus("SSE 重连中…");
+      setStatus("实时流重连中…", "error");
     };
   }
 
   async function connect() {
     const path = $("path").value.trim();
-    if (!path) { setStatus("请填写端口"); return; }
+    if (!path) { setStatus("请先选择或填写串口", "error"); return; }
     setStatus("连接中…");
+    $("led").className = "led warn";
     try {
       const data = await api("/api/connect", {
         path,
@@ -161,11 +182,11 @@
       dtrState = $("dtr").checked;
       rtsState = $("rts").checked;
       connectSse(0);
-      setStatus("已连接 " + data.info.config.path + " @ " + data.info.config.baudRate);
+      setStatus("已连接 " + data.info.config.path + " @ " + data.info.config.baudRate, "ok");
       applyFilters();
     } catch (e) {
       setConnected(false, null);
-      setStatus("连接失败: " + e.message);
+      setStatus("连接失败: " + e.message, "error");
     }
   }
 
@@ -181,9 +202,9 @@
     if (!data) return;
     try {
       const r = await api("/api/write", { data, encoding: $("encoding").value }, "POST");
-      setStatus("已发送 " + r.bytesWritten + "B");
+      setStatus("已发送 " + r.bytesWritten + "B", "ok");
     } catch (e) {
-      setStatus("发送失败: " + e.message);
+      setStatus("发送失败: " + e.message, "error");
     }
   }
 
@@ -195,18 +216,18 @@
         protocol: $("protocol").value,
         delimiter: $("delimiter").value || undefined,
       }, "POST");
-      setStatus("配置已应用");
+      setStatus("配置已应用到当前连接", "ok");
     } catch (e) {
-      setStatus("应用失败: " + e.message);
+      setStatus("应用失败: " + e.message, "error");
     }
   }
 
   async function setSignals(patch) {
     try {
       await api("/api/signals", patch, "POST");
-      setStatus("信号 " + JSON.stringify(patch));
+      setStatus("信号 " + JSON.stringify(patch), "ok");
     } catch (e) {
-      setStatus("信号失败: " + e.message);
+      setStatus("信号失败: " + e.message, "error");
     }
   }
 
@@ -252,7 +273,7 @@
           $("baud").value = String(st.active.config.baudRate || 115200);
         }
         connectSse(0);
-        setStatus("已附着现有连接");
+        setStatus("已附着现有串口连接", "ok");
       }
     } catch (e) { /* ignore */ }
     refreshPorts();

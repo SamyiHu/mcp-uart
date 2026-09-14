@@ -220,6 +220,36 @@ async function main() {
   await hub.close();
   assert(true, "hub.close() completes");
 
+  // —— port fallback: occupy preferred, then createHubWithFallback ——
+  const http = await import("http");
+  const blocker = http.createServer(() => {});
+  await new Promise((resolve) => blocker.listen(19787, "127.0.0.1", resolve));
+
+  const { createHubWithFallback } = await import("../dist/hub/server.js");
+  const hub2 = await createHubWithFallback({
+    backend: new FakeHubBackend(),
+    host: "127.0.0.1",
+    preferredPort: 19787,
+    portSpan: 5,
+    publicDir,
+  });
+  assert(hub2.port !== 19787 && hub2.autoShifted === true, "fallback skips busy port");
+  const h2 = await (await fetch(`${hub2.url}/api/health`)).json();
+  assert(h2.ok === true, "fallback hub serves health");
+  await hub2.close();
+  await new Promise((resolve) => blocker.close(resolve));
+
+  // when free, preferred is used
+  const hub3 = await createHubWithFallback({
+    backend: new FakeHubBackend(),
+    host: "127.0.0.1",
+    preferredPort: 19787,
+    portSpan: 2,
+    publicDir,
+  });
+  assert(hub3.port === 19787 && hub3.autoShifted === false, "uses preferred port when free");
+  await hub3.close();
+
   console.log("\n=== hub offline tests done ===");
 }
 

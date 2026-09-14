@@ -3,11 +3,14 @@
  * mcp-uart-hub — local HTTP host UI for UART (config + live monitor).
  *
  * Usage:
- *   mcp-uart-hub [--port 8787] [--host 127.0.0.1]
+ *   mcp-uart-hub [--port 8787] [--host 127.0.0.1] [--port-span 30]
+ *
+ * If preferred port is busy, automatically tries preferred+1 … preferred+span,
+ * then an ephemeral port. Pass --strict-port to fail hard instead.
  */
 import { SerialManager } from "./serial-manager.js";
 import { createSerialBackend } from "./hub/serial-backend.js";
-import { createHub } from "./hub/server.js";
+import { createHubWithFallback } from "./hub/server.js";
 
 function arg(name: string, fallback?: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -17,18 +20,48 @@ function arg(name: string, fallback?: string): string | undefined {
   return fallback;
 }
 
+function hasFlag(name: string): boolean {
+  return process.argv.includes(`--${name}`);
+}
+
 async function main() {
   const host = arg("host", "127.0.0.1")!;
-  const port = Number(arg("port", "8787"));
+  const preferredPort = Number(arg("port", "8787"));
+  const portSpan = Number(arg("port-span", "30"));
+  const strict = hasFlag("strict-port");
   const manager = new SerialManager();
-  const hub = await createHub({
-    backend: createSerialBackend(manager),
-    host,
-    port,
-  });
+  const backend = createSerialBackend(manager);
+
+  let hub;
+  if (strict) {
+    const { createHub } = await import("./hub/server.js");
+    hub = {
+      ...(await createHub({ backend, host, port: preferredPort })),
+      preferredPort,
+      autoShifted: false,
+    };
+  } else {
+    hub = await createHubWithFallback({
+      backend,
+      host,
+      preferredPort,
+      portSpan,
+    });
+  }
+
+  const notes: string[] = [];
+  if (hub.autoShifted) {
+    notes.push(
+      `Port ${preferredPort} was busy — using ${hub.port} instead.`
+    );
+  }
 
   process.stderr.write(`UART Hub listening on ${hub.url}\n`);
+  for (const n of notes) process.stderr.write(`  * ${n}\n`);
   process.stderr.write(`Open the URL in a browser. Ctrl+C to exit.\n`);
+
+  // Also print a single machine-friendly line for scripts
+  process.stderr.write(`HUB_URL=${hub.url}\nHUB_PORT=${hub.port}\n`);
 
   const shutdown = async () => {
     process.stderr.write("\nShutting down...\n");
