@@ -29,9 +29,11 @@ export type HubHandle = {
   port: number;
   close(): Promise<void>;
   server: http.Server;
-  /** Test helper: current frame buffer length */
+  /** Monitor an existing SerialManager connection (does not take exclusive ownership). */
+  attach(connectionId: string): void;
+  /** Stop monitoring without closing the serial port. */
+  clear(): void;
   frameCount(): number;
-  /** Test helper: broadcast path for fake backend injection */
   getActiveConnectionId(): string | null;
 };
 
@@ -94,6 +96,8 @@ export async function createHub(opts: HubOptions): Promise<HubHandle> {
     opts.publicDir ?? path.resolve(__dirname, "public");
 
   let activeConnectionId: string | null = null;
+  /** true only when this Hub process opened the port (vs MCP-owned attach). */
+  let ownsPort = false;
   let unsubscribe: (() => void) | null = null;
   let frames: HubFrame[] = [];
   let seq = 0;
@@ -115,14 +119,19 @@ export async function createHub(opts: HubOptions): Promise<HubHandle> {
     }
   }
 
-  function attachConnection(connectionId: string): void {
+  function attachConnection(connectionId: string, options: { ownsPort?: boolean } = {}): void {
     if (unsubscribe) {
       unsubscribe();
       unsubscribe = null;
     }
-    frames = [];
-    seq = 0;
+    // Keep history when re-attaching the same logical monitor after MCP open;
+    // clear only when switching to a different connection.
+    if (activeConnectionId !== connectionId) {
+      frames = [];
+      seq = 0;
+    }
     activeConnectionId = connectionId;
+    ownsPort = options.ownsPort === true;
     unsubscribe = backend.onMessage(connectionId, (msg) => {
       seq += 1;
       pushFrame({ ...msg, seq });
@@ -135,9 +144,10 @@ export async function createHub(opts: HubOptions): Promise<HubHandle> {
       unsubscribe = null;
     }
     const id = activeConnectionId;
+    const shouldClose = closePort && ownsPort;
     activeConnectionId = null;
+    ownsPort = false;
     frames = [];
-    // notify SSE clients
     const bye = `event: close\ndata: ${JSON.stringify({ connectionId: id })}\n\n`;
     for (const client of sseClients) {
       try {
@@ -146,7 +156,7 @@ export async function createHub(opts: HubOptions): Promise<HubHandle> {
         /* ignore */
       }
     }
-    if (closePort && id) {
+    if (shouldClose && id) {
       await backend.close(id);
     }
   }
@@ -187,7 +197,13 @@ export async function createHub(opts: HubOptions): Promise<HubHandle> {
 
       // ── API ──
       if (req.method === "GET" && pathname === "/api/health") {
-        json(res, 200, { ok: true, activeConnectionId, frameCount: frames.length, seq });
+        json(res, 200, {
+          ok: true,
+          activeConnectionId,
+          ownsPort,
+          frameCount: frames.length,
+          seq,
+        });
         return;
       }
 
@@ -320,9 +336,16 @@ export async function createHub(opts: HubOptions): Promise<HubHandle> {
         };
 
         const opened = await backend.open(config);
-        attachConnection(opened.connectionId);
+        attachConnection(opened.connectionId, { ownsPort: true });
         const info = backend.getInfo(opened.connectionId);
         json(res, 200, { ok: true, connectionId: opened.connectionId, info });
+        return;
+      }
+
+      if (req.method === "POST" && pathname === "/api/detach") {
+        // Unmonitor without closing the serial port (MCP may still own it).
+        await detachConnection(false);
+        json(res, 200, { ok: true, detached: true, closedPort: false });
         return;
       }
 
@@ -332,8 +355,9 @@ export async function createHub(opts: HubOptions): Promise<HubHandle> {
           return;
         }
         const id = activeConnectionId;
+        const owned = ownsPort;
         await detachConnection(true);
-        json(res, 200, { ok: true, connectionId: id });
+        json(res, 200, { ok: true, connectionId: id, closedPort: owned });
         return;
       }
 
@@ -392,6 +416,8 @@ export async function createHub(opts: HubOptions): Promise<HubHandle> {
     url: `http://${host}:${port}`,
     port,
     server,
+    attach: (connectionId: string) => attachConnection(connectionId, { ownsPort: false }),
+    clear: () => { void detachConnection(false); },
     frameCount: () => frames.length,
     getActiveConnectionId: () => activeConnectionId,
     close: async () => {

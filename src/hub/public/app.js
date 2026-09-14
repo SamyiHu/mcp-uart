@@ -191,11 +191,52 @@
   }
 
   async function disconnect() {
-    try { await api("/api/disconnect", {}, "POST"); } catch (e) { /* ignore */ }
+    try { await api("/api/detach", {}, "POST"); } catch (e) {
+      try { await api("/api/disconnect", {}, "POST"); } catch (e2) { /* ignore */ }
+    }
     if (es) { es.close(); es = null; }
     setConnected(false, null);
-    setStatus("已断开");
+    setStatus("已停止监视（串口若由 MCP 打开，不会关闭）");
   }
+
+  async function pollHealth() {
+    try {
+      const h = await api("/api/health");
+      return h;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function pollAttach() {
+    const h = await pollHealth();
+    if (!h || !h.activeConnectionId || connectionId) return;
+    setConnected(true, h.activeConnectionId);
+    try {
+      const st = await api("/api/status");
+      if (st.active) {
+        $("path").value = st.active.config.path || "";
+        if (st.active.config.baudRate) {
+          const b = String(st.active.config.baudRate);
+          const sel = $("baud");
+          if ([...sel.options].some((o) => o.value === b || o.textContent === b)) sel.value = b;
+        }
+      }
+    } catch (e) { /* ignore */ }
+    connectSse(0);
+    setStatus(
+      h.ownsPort === false
+        ? "监视 MCP 打开的串口会话（数据同步）"
+        : "已挂上当前串口会话",
+      "ok"
+    );
+    applyFilters();
+  }
+
+  /** Poll: if MCP opened a port while page is idle, attach. */
+  setInterval(() => {
+    if (!connectionId) pollAttach();
+  }, 1500);
 
   async function send() {
     const data = $("sendData").value;
@@ -263,19 +304,7 @@
   });
 
   (async () => {
-    try {
-      const h = await api("/api/health");
-      if (h.activeConnectionId) {
-        setConnected(true, h.activeConnectionId);
-        const st = await api("/api/status");
-        if (st.active) {
-          $("path").value = st.active.config.path || "";
-          $("baud").value = String(st.active.config.baudRate || 115200);
-        }
-        connectSse(0);
-        setStatus("已附着现有串口连接", "ok");
-      }
-    } catch (e) { /* ignore */ }
+    await pollAttach();
     refreshPorts();
   })();
 })();

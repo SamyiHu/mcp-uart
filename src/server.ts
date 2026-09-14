@@ -46,13 +46,22 @@ const messagesBrief = (ms: SerialMessage[]) =>
     direction: m.direction,
   }));
 
-export function createServer(): McpServer {
+export type ServerHooks = {
+  /** Shared manager (so an in-process Hub can monitor the same SerialManager). */
+  manager?: SerialManager;
+  /** Called after a port is successfully opened by MCP tools. */
+  onConnectionOpen?: (connectionId: string) => void;
+  /** Called when MCP closes a connection. */
+  onConnectionClose?: (connectionId: string) => void;
+};
+
+export function createServer(hooks: ServerHooks = {}): McpServer {
   const server = new McpServer({
     name: "mcp-uart",
     version: SERVER_VERSION,
   });
 
-  const manager = new SerialManager();
+  const manager = hooks.manager ?? new SerialManager();
   const monitorProcesses = new Map<string, ReturnType<typeof spawn>>();
   const dut = new DutManager(manager);
 
@@ -228,6 +237,7 @@ export function createServer(): McpServer {
           rts: params.rts,
         };
         const result = await manager.open(config);
+        hooks.onConnectionOpen?.(result.connectionId);
 
         let monitorLog: string | null = null;
         let monitorTerminal = false;
@@ -747,6 +757,7 @@ export function createServer(): McpServer {
         }
 
         await manager.close(params.connectionId);
+        hooks.onConnectionClose?.(params.connectionId);
         const data = { ok: true, connectionId: params.connectionId, monitorStopped, loggedMessages };
         return ok(data as any, `Connection ${params.connectionId} closed.${monitorInfo}`);
       } catch (err: any) {
@@ -1037,6 +1048,7 @@ export function createServer(): McpServer {
           rts: true,
         };
         const open = await manager.open(config);
+        hooks.onConnectionOpen?.(open.connectionId);
 
         let monitorLog: string | null = null;
         if (params.autoMonitor) {
@@ -1084,6 +1096,7 @@ export function createServer(): McpServer {
       try {
         if (dut.hasSession(params.connectionId)) dut.detach(params.connectionId);
         await manager.close(params.connectionId);
+        hooks.onConnectionClose?.(params.connectionId);
         return ok(
           { ok: true, connectionId: params.connectionId } as any,
           `Connection ${params.connectionId} closed.`

@@ -170,22 +170,29 @@ Type and press Enter to send. `Ctrl+C` to exit.
 
 ## UART Hub (browser host UI)
 
-One page: **left = config** (port/baud/encoding/DTR/RTS/Break), **right = live monitor** (SSE).
+**Same-process monitor** as the MCP server: one `SerialManager`, one COM port, one frame stream.
 
 ```bash
-npm run hub
-# or
-npx mcp-uart-hub --port 8787
-# open the URL printed on stderr (default http://127.0.0.1:8787)
+# Preferred workflow — MCP starts Hub UI automatically (stderr prints URL)
+# Default http://127.0.0.1:8787 (auto-shifts if busy)
+UART_HUB=1 node dist/index.js   # or just start via your MCP client
+
+# Standalone Hub only (no MCP): npm run hub
+# Disable embedded Hub: UART_HUB=0
 ```
+
+Open the printed `UART Hub UI:` URL in a browser:
+
+- When Agent uses `serial_open` / `dut_connect`, the page **auto-attaches** and shows the same TX/RX live.
+- Page 「断开」 only **stops watching**; it will not close an MCP-owned COM.
+- You can also open a port from the page (Hub owns it); Agent tools use the same manager.
 
 Notes:
 
 - Binds **127.0.0.1 only**
-- **Auto port fallback**: if 8787 is busy (e.g. another host app), tries 8788… then ephemeral. Use `--strict-port` to fail instead, `--port-span N` to change scan width.
-- Single connection policy: opening a new port closes the previous one
-- Avoid opening the same COM in MCP at the same time as Hub (OS exclusive lock)
-- API: `GET /api/health|ports|status|frames`, `POST /api/connect|disconnect|write|config|signals`, `GET /events/stream` (SSE)
+- Standalone `npm run hub` still works if you only want the UI without MCP
+- `UART_HUB_PORT` / `UART_HUB_SPAN` control preferred port / scan width
+- API: `GET /api/health|ports|status|frames`, `POST /api/connect|detach|disconnect|write|config|signals`, `GET /events/stream` (SSE)
 
 Offline tests: `npm run test:hub`
 

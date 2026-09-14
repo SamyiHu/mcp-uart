@@ -250,6 +250,46 @@ async function main() {
   assert(hub3.port === 19787 && hub3.autoShifted === false, "uses preferred port when free");
   await hub3.close();
 
+  // attach from MCP (no ownership) + detach must not close port
+  {
+    const backend4 = new FakeHubBackend();
+    const hub4 = await createHub({
+      backend: backend4,
+      host: "127.0.0.1",
+      port: 0,
+      publicDir,
+    });
+    const opened = await backend4.open({
+      path: "COM3",
+      baudRate: 115200,
+      dataBits: 8,
+      stopBits: 1,
+      parity: "none",
+      flowControl: "none",
+      encoding: "utf8",
+      protocol: "raw",
+    });
+    hub4.attach(opened.connectionId);
+    const health = await (await fetch(`${hub4.url}/api/health`)).json();
+    assert(
+      health.activeConnectionId === opened.connectionId && health.ownsPort === false,
+      "attach marks MCP-owned (ownsPort=false)"
+    );
+    await fetch(`${hub4.url}/api/detach`, { method: "POST" });
+    assert(backend4.closeCount === 0, "detach does not close MCP port");
+    assert(hub4.getActiveConnectionId() === null, "detach clears monitor");
+
+    // hub-owned disconnect closes
+    await fetch(`${hub4.url}/api/connect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "COM4" }),
+    });
+    await fetch(`${hub4.url}/api/disconnect`, { method: "POST" });
+    assert(backend4.closeCount === 1, "hub-owned disconnect closes port");
+    await hub4.close();
+  }
+
   console.log("\n=== hub offline tests done ===");
 }
 
