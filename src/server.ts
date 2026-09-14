@@ -9,6 +9,8 @@ import { listProtocols } from "./protocols.js";
 import type { SerialConfig, BaudRate, Encoding, ProtocolMode, MessageFilter, SerialMessage } from "./types.js";
 import { DutManager, formatRun, hex } from "./dut/manager.js";
 import { listProfiles } from "./dut/profiles/index.js";
+import type { DutAction } from "./dut/types.js";
+import { validateMatchHex } from "./dut/sequence.js";
 import { extractFromMessages, extractFromObject } from "./extract.js";
 import { renderTimelineHtml, renderSmokeHtml, writeHtmlReport } from "./visualize.js";
 import { ok, fail } from "./respond.js";
@@ -1152,6 +1154,159 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
           content: [{ type: "text" as const, text: human }],
           structuredContent: { ...r, ok: r.verdict === "PASS" || r.verdict === "REPORT" } as any,
           isError: r.verdict === "FAIL" || r.verdict === "TIMEOUT",
+        };
+      } catch (err: any) {
+        return fail(`Error: ${err.message}`);
+      }
+    }
+  );
+
+  // ── dut_sequence: free-form orchestrator (design v2) ──
+  const seqByte = z.union([z.number(), z.string()]).describe("0~255 number or hex string like '0x0F'");
+  const seqAction = z.discriminatedUnion("action", [
+    z.object({
+      action: z.literal("send-frame"),
+      cmd: seqByte,
+      p1: seqByte.optional(),
+      p2: seqByte.optional(),
+      mark: z.string().optional(),
+      baseline: z.boolean().optional(),
+    }),
+    z.object({
+      action: z.literal("send-raw"),
+      hex: z.string(),
+      mark: z.string().optional(),
+      baseline: z.boolean().optional(),
+    }),
+    z.object({ action: z.literal("handshake"), mark: z.string().optional() }),
+    z.object({
+      action: z.literal("wait"),
+      ms: z.number(),
+      mark: z.string().optional(),
+      baseline: z.boolean().optional(),
+    }),
+    z.object({
+      action: z.literal("delay"),
+      ms: z.number(),
+      mark: z.string().optional(),
+    }),
+    z.object({ action: z.literal("clear-state"), mark: z.string().optional() }),
+    z.object({
+      action: z.literal("signals"),
+      dtr: z.boolean().optional(),
+      rts: z.boolean().optional(),
+      break: z.boolean().optional(),
+      holdMs: z.number().optional(),
+      mark: z.string().optional(),
+    }),
+    z.object({
+      action: z.literal("poll"),
+      send: z.object({
+        frame: z
+          .object({ cmd: seqByte, p1: seqByte.optional(), p2: seqByte.optional() })
+          .optional(),
+        hex: z.string().optional(),
+      }),
+      intervalMs: z.number(),
+      timeoutMs: z.number(),
+      matchHex: z.string().optional(),
+      matchMode: z.enum(["frame-hex", "raw-hex"]).optional(),
+      framesCount: z.number().optional(),
+      twoPhase: z.boolean().optional(),
+      ignoreExisting: z.boolean().optional(),
+      mark: z.string().optional(),
+      baseline: z.boolean().optional(),
+    }),
+    z.object({
+      action: z.literal("repeat"),
+      times: z.number(),
+      steps: z.array(z.any()),
+      abortOnFail: z.boolean().optional(),
+      logRepeat: z.enum(["aggregate", "each"]).optional(),
+      mark: z.string().optional(),
+    }),
+  ]);
+
+  function coerceStep(s: any): DutAction {
+    const a = { ...s };
+    const type = a.action === "delay" ? "wait" : a.action;
+    delete a.action;
+    // map delay→wait
+    if (type === "wait" && a.ms !== undefined) {
+      return { type: "wait", ms: a.ms, ...(a.mark ? { mark: a.mark } : {}), ...(a.baseline ? { baseline: a.baseline } : {}) } as DutAction;
+    }
+    if (type === "repeat" && Array.isArray(a.steps)) {
+      return {
+        type: "repeat",
+        times: a.times,
+        steps: a.steps.map(coerceStep),
+        abortOnFail: a.abortOnFail,
+        logRepeat: a.logRepeat,
+        mark: a.mark,
+      } as DutAction;
+    }
+    return { type, ...a } as DutAction;
+  }
+
+  function precheckPoll(actions: DutAction[]): void {
+    for (const act of actions) {
+      if (act.type === "poll") {
+        if (act.matchHex && act.send.frame && (act.matchMode ?? "frame-hex") === "frame-hex") {
+          const probe = (sessionProbeHex(act.send.frame));
+          validateMatchHex(act.matchHex, probe);
+        }
+      } else if (act.type === "repeat") {
+        precheckPoll(act.steps);
+      }
+    }
+  }
+
+  function sessionProbeHex(frame: { cmd: any; p1?: any; p2?: any }): string {
+    // Build with w6729-compatible checksum only for echo-conflict check; actual send uses session profile.
+    const cmd = Number(frame.cmd);
+    const p1 = Number(frame.p1 ?? 0);
+    const p2 = Number(frame.p2 ?? 0);
+    // Use sum-complement over 3 data bytes (W6729). Good enough for echo substring check.
+    const acc = (cmd + p1 + p2) & 0xff;
+    const ck = (0xff - acc) & 0xff;
+    return [cmd, p1, p2, ck].map((b) => (b & 0xff).toString(16).padStart(2, "0").toUpperCase()).join("");
+  }
+
+  server.registerTool(
+    "dut_sequence",
+    {
+      title: "Run DUT sequence",
+      description:
+        "Run a free-form action sequence (poll/signals/repeat/clear-state + classic frame ops). Returns per-step timestamped log. Budget default 25s. poll.matchHex matches NEW frame hex (not echo); use clear-state after command echo before timing probes.",
+      inputSchema: {
+        connectionId: z.string(),
+        steps: z.array(seqAction).min(1).max(200).describe("Ordered actions; delay is an alias of wait"),
+        totalBudgetMs: z.number().optional().default(25000),
+        abortOnError: z.boolean().optional().default(false),
+        captureFrames: z.enum(["match", "all", "none"]).optional().default("match"),
+      },
+      outputSchema: {
+        ok: z.boolean(),
+        elapsedMs: z.number(),
+        stopped: z.enum(["budget", "aborted"]).nullable(),
+        abortReason: z.string().optional(),
+        steps: z.array(z.record(z.string(), z.unknown())),
+        summary: z.record(z.string(), z.unknown()),
+      },
+    },
+    async (params) => {
+      try {
+        const actions = (params.steps as any[]).map(coerceStep);
+        precheckPoll(actions);
+        const r = await dut.runSequence(params.connectionId, actions, {
+          totalBudgetMs: params.totalBudgetMs,
+          abortOnError: params.abortOnError,
+          captureFrames: params.captureFrames,
+        });
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(r, null, 2) }],
+          structuredContent: r as any,
+          isError: r.stopped === "aborted",
         };
       } catch (err: any) {
         return fail(`Error: ${err.message}`);

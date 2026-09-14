@@ -3,9 +3,10 @@
  * loaded profile; everything here works for any profile.
  */
 import type { SerialManager } from "../serial-manager.js";
-import type { DutCommandDef, DutProfile, DutRunResult } from "./types.js";
+import type { DutAction, DutCommandDef, DutProfile, DutRunResult, DutSequenceOptions, DutSequenceResult } from "./types.js";
 import { DutSession, num } from "./session.js";
 import { getProfile } from "./profiles/index.js";
+import { runDutSequence } from "./sequence.js";
 
 export class DutManager {
   private sessions = new Map<string, DutSession>();
@@ -61,6 +62,16 @@ export class DutManager {
     const started = Date.now();
     const out = await session.runActions(def.actions, overrides);
     return this.judge(def, out, started);
+  }
+
+  /** Run a free-form action sequence (dut_sequence). */
+  async runSequence(
+    connectionId: string,
+    actions: DutAction[],
+    options?: DutSequenceOptions
+  ): Promise<DutSequenceResult> {
+    const session = this.getSession(connectionId);
+    return runDutSequence(session, actions, options);
   }
 
   /** Run the profile's smoke sequence; returns per-step results + summary. */

@@ -238,6 +238,7 @@ Tools:
 | `dut_extract` | Run a test then extract one field via path |
 | `dut_cmd` | Raw framed command (checksum auto-appended), no judgment |
 | `dut_smoke` | Run smoke sequence; structured `steps[]` for visualization |
+| `dut_sequence` | Free-form orchestrator: poll / signals / repeat / clear-state + frame ops (25s budget) |
 | `dut_status` | Session stats: frames parsed/sent, noise bytes, last frames |
 | `dut_send_raw` | Raw bytes without framing (echo bytes, out-of-protocol) |
 | `dut_disconnect` | Detach session + close port |
@@ -252,16 +253,18 @@ Example flow (W6729 on FPGA):
 "测 P2 口输出高 0x55"             -> dut_test(io_output, cmd=0x15, p1=0xFF, p2=0x55)
 "只要结果帧第3字节"               -> dut_extract(..., path="frames[1].bytes[2]")
 "发原始命令 0F 04 00"             -> dut_cmd(cmd=15, p1=4, p2=0)
+"IDLE 唤醒延迟"                   -> dut_sequence([send-frame 0x01, wait 8, clear-state, poll twoPhase match 0F00])
 "画时序图"                        -> serial_visualize(connectionId)
 ```
 
 Offline tests:
 
 ```bash
-npm test              # dut + extract/visualize + hub
+npm test              # dut + extract/visualize + hub + sequence
 npm run test:dut
 npm run test:extract
 npm run test:hub
+npm run test:sequence
 ```
 
 ## License

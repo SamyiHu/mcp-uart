@@ -32,7 +32,7 @@ export interface FrameDescriptor {
  * The DUT's Send_Read_N_Byte always READS the next frame before replying, so
  * every command needs its frame sent twice (dispatch + handshake).
  */
-export type DutAction =
+export type DutActionBase =
   | { type: "send-frame"; cmd: number | string; p1?: number | string; p2?: number | string }
   /**
    * Wait for the DUT echo that byte-equals the dispatched frame, resending
@@ -55,7 +55,45 @@ export type DutAction =
   | { type: "wake-pulse"; ms?: number }
   | { type: "collect-frames"; count: number; timeoutMs: number }
   /** Wait for raw bytes outside of valid frames (e.g. UART echo byte). */
-  | { type: "expect-extra"; hex: string; timeoutMs: number };
+  | { type: "expect-extra"; hex: string; timeoutMs: number }
+  /** Drop buf/frames/extras — align state before a timing probe (avoid echo pollution). */
+  | { type: "clear-state" }
+  /**
+   * Set DTR/RTS/Break. If holdMs is set, restore the changed lines after the hold.
+   * Sequence engine also restores a full snapshot on finish.
+   */
+  | { type: "signals"; dtr?: boolean; rts?: boolean; break?: boolean; holdMs?: number }
+  /** Repeat nested steps N times (LED keep-alive spam etc.). */
+  | {
+      type: "repeat";
+      times: number;
+      steps: DutAction[];
+      abortOnFail?: boolean;
+      logRepeat?: "aggregate" | "each";
+    }
+  /**
+   * Poll: send probe on an interval until match or timeout.
+   * matchHex is matched against NEW frame hex (frame-hex) or raw stream (raw-hex).
+   */
+  | {
+      type: "poll";
+      send: { frame?: { cmd: number | string; p1?: number | string; p2?: number | string }; hex?: string };
+      intervalMs: number;
+      timeoutMs: number;
+      matchHex?: string;
+      matchMode?: "frame-hex" | "raw-hex";
+      framesCount?: number;
+      twoPhase?: boolean;
+      ignoreExisting?: boolean;
+      mark?: string;
+    };
+
+/** Runtime annotation fields (sequence log / baseline). */
+export type DutAction = DutActionBase & {
+  mark?: string;
+  /** Marks this step as the recovery-time baseline (recoveryMs = match - this.atMs). */
+  baseline?: boolean;
+};
 
 export interface DutJudge {
   /** Collected frame 0 must byte-equal the dispatched frame (DUT echo). */
@@ -119,4 +157,45 @@ export interface DutRunResult {
   failedChecks: string[];
   elapsedMs: number;
   note?: string;
+}
+
+/** One step log entry from dut_sequence. */
+export interface DutSequenceStepLog {
+  i: number;
+  action: string;
+  atMs: number;
+  mark?: string;
+  baseline?: boolean;
+  sent?: string[];
+  frames?: string[];
+  extras?: number[];
+  attempts?: number;
+  firstMatchAtMs?: number;
+  matchedFrameHex?: string;
+  verdict?: "ok" | "timeout" | "matched" | "failed" | "skipped";
+  note?: string;
+  stopped?: "budget" | "aborted";
+  completed?: number;
+  times?: number;
+}
+
+export interface DutSequenceResult {
+  ok: boolean;
+  elapsedMs: number;
+  stopped: null | "budget" | "aborted";
+  abortReason?: string;
+  steps: DutSequenceStepLog[];
+  summary: {
+    firstRxLatencyMs?: number;
+    recoveryMs?: number;
+    framesParsed: number;
+    extras: number;
+    framesSent: number;
+  };
+}
+
+export interface DutSequenceOptions {
+  totalBudgetMs?: number;
+  abortOnError?: boolean;
+  captureFrames?: "match" | "all" | "none";
 }
