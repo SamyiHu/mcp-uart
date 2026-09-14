@@ -109,3 +109,15 @@ export interface WaitResponse {
   firstMessage: string | null;
   lastMessage: string | null;
 }
+
+export interface MessageFilter {
+  direction?: "rx" | "tx" | "all";
+  since?: string;
+  count?: number;
+  offset?: number;
+  matchHex?: string;
+  matchText?: string;
+  minLength?: number;
+  maxLength?: number;
+  lastOnly?: boolean;
+}

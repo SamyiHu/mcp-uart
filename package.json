@@ -1,18 +1,24 @@
 {
   "name": "mcp-uart",
-  "version": "1.0.0",
-  "description": "Serial Port MCP Server for AI agents — tools for reading, writing, and monitoring UART/serial devices",
+  "version": "1.2.0",
+  "description": "Serial Port MCP Server for AI agents — structured output, precise extract/filters, HTML visualize, profile-driven DUT/FT runner (W6729 etc.)",
   "main": "dist/index.js",
   "type": "module",
   "bin": {
     "mcp-uart": "dist/index.js",
-    "serial-monitor": "dist/monitor.js"
+    "serial-monitor": "dist/monitor.js",
+    "mcp-uart-hub": "dist/hub.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node -e \"const fs=require('fs');fs.cpSync('src/dut/profiles','dist/dut/profiles',{recursive:true,filter:s=>!s.endsWith('.ts')});fs.cpSync('src/hub/public','dist/hub/public',{recursive:true})\"",
     "start": "node dist/index.js",
+    "hub": "node dist/hub.js",
     "dev": "tsc --watch",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "test:dut": "node test/dut-offline-test.mjs",
+    "test:extract": "node test/extract-visualize-test.mjs",
+    "test:hub": "node test/hub-api-test.mjs",
+    "test": "npm run test:dut && npm run test:extract && npm run test:hub"
   },
   "files": [
     "dist",

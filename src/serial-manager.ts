@@ -7,6 +7,7 @@ import type {
   ConnectionInfo,
   ConnectionEntry,
   ReadResult,
+  MessageFilter,
 } from "./types.js";
 import { decode, encode, toHexDump } from "./encodings.js";
 import { createParser } from "./protocols.js";
@@ -38,6 +39,62 @@ export class SerialManager {
   private frameWaiters = new Map<string, FrameWaiterEntry[]>();
   private responseWaiters = new Map<string, ResponseWaiterEntry>();
   private monitors = new Map<string, MonitorEntry>();
+  private dataHooks = new Map<string, Set<(data: Buffer) => void>>();
+  private messageListeners = new Map<string, Set<(msg: SerialMessage) => void>>();
+
+  /**
+   * Subscribe to every message (TX/RX) on a connection after it is stored.
+   * Returns an unsubscribe function.
+   */
+  onMessage(connectionId: string, cb: (msg: SerialMessage) => void): () => void {
+    if (!this.messageListeners.has(connectionId)) {
+      this.messageListeners.set(connectionId, new Set());
+    }
+    this.messageListeners.get(connectionId)!.add(cb);
+    return () => {
+      this.messageListeners.get(connectionId)?.delete(cb);
+    };
+  }
+
+  /**
+   * Register a raw-RX-bytes hook for a connection. The hook receives every
+   * incoming chunk BEFORE any parser/encoding handling — protocol layers
+   * (e.g. W6729 framing) use this for byte-accurate frame extraction.
+   */
+  addDataHook(connectionId: string, cb: (data: Buffer) => void): void {
+    if (!this.connections.has(connectionId)) {
+      throw new Error(`Connection ${connectionId} not found`);
+    }
+    if (!this.dataHooks.has(connectionId)) {
+      this.dataHooks.set(connectionId, new Set());
+    }
+    this.dataHooks.get(connectionId)!.add(cb);
+  }
+
+  removeDataHook(connectionId: string, cb: (data: Buffer) => void): void {
+    this.dataHooks.get(connectionId)?.delete(cb);
+  }
+
+  /**
+   * Set modem control signals on a connection. Used e.g. to generate a
+   * break pulse on the TX line, which the W6729 board sees as a falling
+   * edge on its RX wake pin (STOP/IDLE wake).
+   */
+  setSignals(
+    connectionId: string,
+    signals: { break?: boolean; dtr?: boolean; rts?: boolean }
+  ): Promise<void> {
+    const entry = this.connections.get(connectionId);
+    if (!entry) throw new Error(`Connection ${connectionId} not found`);
+    if (entry.status !== "open") throw new Error(`Connection ${connectionId} is ${entry.status}`);
+
+    return new Promise((resolve, reject) => {
+      entry.port.set(signals as any, (err: any) => {
+        if (err) reject(new Error(`Failed to set signals: ${err.message}`));
+        else resolve();
+      });
+    });
+  }
 
   async listPorts(): Promise<Array<{ path: string; manufacturer?: string; serialNumber?: string; vendorId?: string; productId?: string; pnpId?: string }>> {
     const ports = await SerialPort.list();
@@ -154,6 +211,16 @@ export class SerialManager {
     const entry = this.connections.get(connectionId);
     if (!entry) return;
 
+    // Raw RX hooks first (protocol layers need unframed bytes)
+    if (direction === "rx") {
+      const hooks = this.dataHooks.get(connectionId);
+      if (hooks) {
+        for (const cb of hooks) {
+          try { cb(data); } catch { /* hook errors must not kill the stream */ }
+        }
+      }
+    }
+
     const decoded = decode(data, entry.config.encoding);
     const msg: SerialMessage = {
       timestamp: new Date().toISOString(),
@@ -167,6 +234,13 @@ export class SerialManager {
     entry.messages.push(msg);
     entry.messageCount++;
     entry.lastActivity = new Date();
+
+    const listeners = this.messageListeners.get(connectionId);
+    if (listeners) {
+      for (const cb of listeners) {
+        try { cb(msg); } catch { /* listener errors must not kill the stream */ }
+      }
+    }
 
     const maxBuffer = entry.config.bufferSize ?? 1000;
     if (entry.messages.length > maxBuffer) {
@@ -215,22 +289,67 @@ export class SerialManager {
     count?: number,
     since?: string
   ): SerialMessage[] {
+    return this.readFiltered(connectionId, { count, since });
+  }
+
+  /** Apply a MessageFilter to an in-memory list (pure; no connection). */
+  static applyFilter(messages: SerialMessage[], filter: MessageFilter = {}): SerialMessage[] {
+    let out = messages;
+    if (filter.direction && filter.direction !== "all") {
+      out = out.filter((m) => m.direction === filter.direction);
+    }
+    if (filter.since) {
+      const sinceTime = new Date(filter.since).getTime();
+      out = out.filter((m) => new Date(m.timestamp).getTime() > sinceTime);
+    }
+    if (typeof filter.minLength === "number") {
+      out = out.filter((m) => m.length >= filter.minLength!);
+    }
+    if (typeof filter.maxLength === "number") {
+      out = out.filter((m) => m.length <= filter.maxLength!);
+    }
+    if (filter.matchHex) {
+      const needle = filter.matchHex.replace(/\s+/g, "").toUpperCase();
+      out = out.filter((m) => (m.raw || "").toUpperCase().includes(needle));
+    }
+    if (filter.matchText) {
+      const needle = filter.matchText;
+      out = out.filter((m) => m.data.includes(needle));
+    }
+    if (typeof filter.offset === "number" && filter.offset > 0) {
+      out = out.slice(filter.offset);
+    }
+    if (filter.lastOnly) {
+      out = out.length ? [out[out.length - 1]] : [];
+    } else if (typeof filter.count === "number" && filter.count > 0) {
+      out = out.slice(-filter.count);
+    }
+    return out;
+  }
+
+  getMessages(connectionId: string, filter: MessageFilter = {}, opts: { advanceCursor?: boolean } = {}): SerialMessage[] {
     const entry = this.connections.get(connectionId);
     if (!entry) throw new Error(`Connection ${connectionId} not found`);
 
-    let messages = entry.messages;
+    const messages = SerialManager.applyFilter(entry.messages, filter);
 
-    if (since) {
-      const sinceTime = new Date(since).getTime();
-      messages = messages.filter((m) => new Date(m.timestamp).getTime() > sinceTime);
+    if (opts.advanceCursor !== false) {
+      entry.lastReadIndex = entry.messages.length;
     }
-
-    if (count && count > 0) {
-      messages = messages.slice(-count);
-    }
-
-    entry.lastReadIndex = entry.messages.length;
     return messages;
+  }
+
+  readFiltered(
+    connectionId: string,
+    filter: MessageFilter = {},
+    opts: { advanceCursor?: boolean } = {}
+  ): SerialMessage[] {
+    return this.getMessages(connectionId, filter, opts);
+  }
+
+  /** Snapshot of buffered messages without advancing the read cursor. */
+  peekMessages(connectionId: string, filter: MessageFilter = {}): SerialMessage[] {
+    return this.getMessages(connectionId, filter, { advanceCursor: false });
   }
 
   async reconfigure(
@@ -278,6 +397,8 @@ export class SerialManager {
       if (entry.parser) {
         entry.port.unpipe(entry.parser);
       }
+      this.dataHooks.delete(connectionId);
+      this.messageListeners.delete(connectionId);
       entry.port.close((err) => {
         if (err) {
           reject(new Error(`Failed to close: ${err.message}`));
