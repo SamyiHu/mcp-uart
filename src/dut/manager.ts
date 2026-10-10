@@ -186,7 +186,7 @@ export class DutManager {
         }
         if (j.extraContains) {
           const need = j.extraContains.replace(/\s+/g, "").toUpperCase();
-          const have = out.extras.map(hex).join("");
+          const have = out.extras.map((b) => (b & 0xff).toString(16).toUpperCase().padStart(2, "0")).join("");
           if (!have.includes(need)) {
             verdict = "FAIL";
             failedChecks.push(`回显字节流中未找到 ${need}（收到: ${have || "无"}）`);
