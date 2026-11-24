@@ -243,9 +243,12 @@ export class SerialManager {
     }
 
     const maxBuffer = entry.config.bufferSize ?? 1000;
-    if (entry.messages.length > maxBuffer) {
+    // Trim in bulk: `slice(-maxBuffer)` on every frame copied the whole message
+    // buffer once per frame, which is pure overhead at high baud rates.
+    const headroom = Math.max(64, maxBuffer >> 2);
+    if (entry.messages.length > maxBuffer + headroom) {
       const trimmed = entry.messages.length - maxBuffer;
-      entry.messages = entry.messages.slice(-maxBuffer);
+      entry.messages.splice(0, trimmed);
       entry.lastReadIndex = Math.max(0, entry.lastReadIndex - trimmed);
     }
 

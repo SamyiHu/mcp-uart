@@ -145,6 +145,11 @@ async function main() {
   j = await r.json();
   assert(j.frames.length === 1 && j.frames[0].raw === "03", "sinceSeq frame is only 03");
 
+  // SSE resume: the stream must honour ?sinceSeq= (the panel relies on it to
+  // replay only the recent tail instead of the whole 2000-frame buffer).
+  const replay = await readSse(`${base}/events/stream?sinceSeq=${seqNow}`, (frames) => frames.length > 0, 1000);
+  assert(replay.length === 1 && replay[0].raw === "03", "SSE sinceSeq replays only newer frames");
+
   // config reconfigure
   r = await fetch(`${base}/api/config`, {
     method: "POST",

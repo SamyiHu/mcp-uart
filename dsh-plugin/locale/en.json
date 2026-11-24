@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "UART panel",
+    "description": "Serial console inside DSH: connect a port, watch TX/RX frames live, filter them, send data and toggle modem signals — over the same serial session the Agent's MCP tools use.",
+    "detail": "docs/DETAIL.md"
+  }
+}

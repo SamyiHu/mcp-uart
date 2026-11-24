@@ -9,13 +9,18 @@ import * as http from "http";
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
-import type { HubBackend, HubFrame } from "./backend.js";
+import type { HubBackend, HubDut, HubFrame } from "./backend.js";
 import type { MessageFilter, SerialConfig } from "../types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+/** Process start time, reported by /api/health so clients prefer the newest Hub. */
+const HUB_STARTED_AT = new Date().toISOString();
+
 export type HubOptions = {
   backend: HubBackend;
+  /** DUT profile layer over the same serial manager (panel DUT page). Omit for serial-only hubs. */
+  dut?: HubDut | null;
   host?: string;
   port?: number;
   /** Max frames retained for SSE/history (default 2000) */
@@ -86,10 +91,14 @@ async function readJson<T = Record<string, unknown>>(req: http.IncomingMessage):
 type SseClient = {
   res: http.ServerResponse;
   connectionId: string | null;
+  /** Coalesced SSE blocks awaiting one write. */
+  pending: string[];
+  scheduled: boolean;
 };
 
 export async function createHub(opts: HubOptions): Promise<HubHandle> {
   const backend = opts.backend;
+  const dut = opts.dut ?? null;
   const host = opts.host ?? "127.0.0.1";
   const maxFrames = opts.maxFrames ?? 2000;
   const publicDir =
@@ -100,23 +109,85 @@ export async function createHub(opts: HubOptions): Promise<HubHandle> {
   let ownsPort = false;
   let unsubscribe: (() => void) | null = null;
   let frames: HubFrame[] = [];
+  /**
+   * Session archive, independent of `frames`.
+   *
+   * `frames` is the SSE replay buffer and is cleared whenever the monitored
+   * connection changes; that made the console forget everything on reconnect.
+   * The archive survives those switches so the History view can still show what
+   * the device said earlier in this Hub's lifetime.
+   */
+  let history: HubFrame[] = [];
+  const maxHistory = 20000;
   let seq = 0;
   const sseClients = new Set<SseClient>();
 
+  /**
+   * Amortised trim: dropping one element per frame with `slice(-max)` copied the
+   * WHOLE array on every single frame — at a few hundred frames/second that is
+   * hundreds of thousands of element moves per second and showed up as a laggy
+   * console. Trim in bulk, rarely, and in place.
+   */
+  function trimInPlace<T>(list: T[], max: number, headroom: number): void {
+    if (list.length <= max + headroom) return;
+    list.splice(0, list.length - max);
+  }
+
   function pushFrame(msg: HubFrame): void {
     frames.push(msg);
-    if (frames.length > maxFrames) {
-      frames = frames.slice(-maxFrames);
-    }
+    trimInPlace(frames, maxFrames, 256);
+    history.push(msg);
+    trimInPlace(history, maxHistory, 2048);
     const payload = `id: ${msg.seq}\nevent: frame\ndata: ${JSON.stringify(msg)}\n\n`;
     for (const client of sseClients) {
       if (client.connectionId && client.connectionId !== msg.connectionId) continue;
+      sendSse(client, payload);
+    }
+  }
+
+  /**
+   * Coalesce SSE writes.
+   *
+   * One `res.write` per frame is one syscall per frame; at a few hundred
+   * frames/second that starves the socket and the browser sees a bursty,
+   * stuttering stream. Buffer the blocks and flush them together on the next
+   * turn of the loop — latency stays sub-millisecond, syscalls drop by ~100x.
+   */
+  function sendSse(client: SseClient, chunk: string): void {
+    client.pending.push(chunk);
+    if (client.scheduled) return;
+    client.scheduled = true;
+    setImmediate(() => {
+      client.scheduled = false;
+      if (client.pending.length === 0) return;
+      const body = client.pending.join('');
+      client.pending.length = 0;
       try {
-        client.res.write(payload);
+        client.res.write(body);
       } catch {
         /* dead client cleaned on close */
       }
+    });
+  }
+
+  /** Fan an event out to every SSE client (optionally only those on one connection). */
+  function broadcast(event: string, payload: unknown, connectionId?: string | null): void {
+    const chunk = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
+    for (const client of sseClients) {
+      if (connectionId && client.connectionId && client.connectionId !== connectionId) continue;
+      sendSse(client, chunk);
     }
+  }
+
+  /** The connection the panel would act on, as the UI labels it. */
+  function activeSummary(): { connectionId: string; port: string | null; baudRate: number | null } | null {
+    if (!activeConnectionId) return null;
+    const info = backend.listConnections().find((c) => c.id === activeConnectionId);
+    return {
+      connectionId: activeConnectionId,
+      port: info?.config.path ?? null,
+      baudRate: info?.config.baudRate ?? null,
+    };
   }
 
   function attachConnection(connectionId: string, options: { ownsPort?: boolean } = {}): void {
@@ -203,6 +274,12 @@ export async function createHub(opts: HubOptions): Promise<HubHandle> {
           ownsPort,
           frameCount: frames.length,
           seq,
+          dut: dut !== null,
+          // Identity of this process, so a client can tell a freshly started
+          // Hub from an orphan left behind by an older run and pick the newest.
+          pid: process.pid,
+          startedAt: HUB_STARTED_AT,
+          features: { history: true, dut: dut !== null },
         });
         return;
       }
@@ -226,6 +303,142 @@ export async function createHub(opts: HubOptions): Promise<HubHandle> {
           active,
           connections,
         });
+        return;
+      }
+
+      if (pathname === "/api/dut" || pathname.startsWith("/api/dut/")) {
+        if (dut === null) {
+          if (req.method === "GET" && (pathname === "/api/dut" || pathname === "/api/dut/status")) {
+            json(res, 200, { ok: true, available: false, profiles: [], status: null, active: null });
+            return;
+          }
+          json(res, 501, { ok: false, error: "This Hub was started without a DUT manager" });
+          return;
+        }
+
+        if (req.method === "GET" && pathname === "/api/dut") {
+          json(res, 200, {
+            ok: true,
+            available: true,
+            profiles: dut.profiles(),
+            status: dut.status(activeConnectionId),
+            active: activeSummary(),
+          });
+          return;
+        }
+
+        if (req.method === "GET" && pathname === "/api/dut/status") {
+          json(res, 200, {
+            ok: true,
+            available: true,
+            status: dut.status(activeConnectionId),
+            active: activeSummary(),
+          });
+          return;
+        }
+
+        if (req.method === "POST" && pathname === "/api/dut/connect") {
+          const body = await readJson<{
+            profile?: string;
+            path?: string;
+            baudRate?: number;
+            connectionId?: string | null;
+          }>(req);
+          if (!body.profile) {
+            json(res, 400, { ok: false, error: "profile is required" });
+            return;
+          }
+          // Prefer the session already open (shared with the Agent) over a second port.
+          const target = body.connectionId ?? activeConnectionId ?? null;
+          const result = await dut.connect({
+            profile: body.profile,
+            path: body.path,
+            baudRate: body.baudRate,
+            connectionId: target,
+          });
+          if (result.connectionId !== activeConnectionId) {
+            attachConnection(result.connectionId, { ownsPort: result.opened });
+          }
+          json(res, 200, {
+            ok: true,
+            connectionId: result.connectionId,
+            opened: result.opened,
+            status: result.status,
+            active: activeSummary(),
+          });
+          return;
+        }
+
+        if (req.method === "POST" && pathname === "/api/dut/disconnect") {
+          const body = await readJson<{ closePort?: boolean }>(req);
+          const id = activeConnectionId;
+          const closePort = body.closePort === true && ownsPort;
+          await dut.disconnect({ connectionId: id, closePort: false });
+          if (closePort) await detachConnection(true);
+          json(res, 200, {
+            ok: true,
+            status: dut.status(activeConnectionId),
+            active: activeSummary(),
+          });
+          return;
+        }
+
+        if (req.method === "POST" && pathname === "/api/dut/run") {
+          const body = await readJson<{ name?: string }>(req);
+          if (!body.name) {
+            json(res, 400, { ok: false, error: "name is required" });
+            return;
+          }
+          if (!dut.status(activeConnectionId).connected) {
+            json(res, 409, { ok: false, error: "No DUT session. Connect a profile first." });
+            return;
+          }
+          if (dut.busy()) {
+            json(res, 409, { ok: false, error: "A smoke run is already in progress" });
+            return;
+          }
+          const result = await dut.runCommand(body.name, activeConnectionId);
+          json(res, 200, { ok: true, result });
+          return;
+        }
+
+        if (req.method === "POST" && pathname === "/api/dut/smoke") {
+          const body = await readJson<{ includeLowPower?: boolean }>(req);
+          if (!dut.status(activeConnectionId).connected) {
+            json(res, 409, { ok: false, error: "No DUT session. Connect a profile first." });
+            return;
+          }
+          if (dut.busy()) {
+            json(res, 409, { ok: false, error: "A smoke run is already in progress" });
+            return;
+          }
+          const result = await dut.runSmoke(
+            { includeLowPower: body.includeLowPower === true, connectionId: activeConnectionId },
+            (event) => broadcast("dut", event, activeConnectionId)
+          );
+          json(res, 200, { ok: true, result });
+          return;
+        }
+
+        json(res, 404, { ok: false, error: `Not found: ${req.method} ${pathname}` });
+        return;
+      }
+
+      if (req.method === "GET" && pathname === "/api/history") {
+        const limit = Number(url.searchParams.get("limit") ?? "500");
+        const offset = Number(url.searchParams.get("offset") ?? "0");
+        const direction = url.searchParams.get("direction") as "rx" | "tx" | "all" | null;
+        const text = url.searchParams.get("text") ?? "";
+        const hex = (url.searchParams.get("hex") ?? "").replace(/\s+/g, "").toUpperCase();
+        let list = history;
+        if (direction && direction !== "all") list = list.filter((f) => f.direction === direction);
+        if (hex.length > 0) list = list.filter((f) => (f.raw ?? "").toUpperCase().includes(hex));
+        if (text.length > 0) list = list.filter((f) => (f.data ?? "").includes(text));
+        const total = list.length;
+        // Newest first: the history view is for reading back, not streaming.
+        const ordered = list.slice().reverse();
+        const page = ordered.slice(Math.max(0, offset), Math.max(0, offset) + Math.max(1, Math.min(limit, 5000)));
+        json(res, 200, { ok: true, total, offset, limit, frames: page });
         return;
       }
 
@@ -254,7 +467,7 @@ export async function createHub(opts: HubOptions): Promise<HubHandle> {
         });
         res.write("retry: 2000\n\n");
 
-        const client: SseClient = { res, connectionId };
+        const client: SseClient = { res, connectionId, pending: [], scheduled: false };
         sseClients.add(client);
 
         // Replay backlog
@@ -326,7 +539,10 @@ export async function createHub(opts: HubOptions): Promise<HubHandle> {
           parity: (body.parity as SerialConfig["parity"]) ?? "none",
           flowControl: (body.flowControl as SerialConfig["flowControl"]) ?? "none",
           encoding: (body.encoding as SerialConfig["encoding"]) ?? "utf8",
-          protocol: (body.protocol as SerialConfig["protocol"]) ?? "raw",
+          // Default to line framing: with "raw" every USB read became one frame,
+          // so a single message arrived split across chunks and the console
+          // looked like it was cutting by time instead of by message.
+          protocol: (body.protocol as SerialConfig["protocol"]) ?? "line",
           delimiter: body.delimiter,
           frameStart: body.frameStart,
           frameEnd: body.frameEnd,

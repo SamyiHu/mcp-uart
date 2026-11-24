@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36" fill="none">
+  <!-- Same mark as the sidebar row, the orb and the console empty state:
+       a rounded frame with one square wave. -->
+  <rect x="4.2" y="7.2" width="27.6" height="21.6" rx="4.6" stroke="#247bbf" stroke-width="2.1" opacity="0.6"/>
+  <path d="M8.6 25.4h4.3V11.6h4.7v13.8h4.6V11.6h4.8" stroke="#247bbf" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

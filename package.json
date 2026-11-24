@@ -10,7 +10,8 @@
     "mcp-uart-hub": "dist/hub.js"
   },
   "scripts": {
-    "build": "tsc && node -e \"const fs=require('fs');fs.cpSync('src/dut/profiles','dist/dut/profiles',{recursive:true,filter:s=>!s.endsWith('.ts')});fs.cpSync('src/hub/public','dist/hub/public',{recursive:true})\"",
+    "build": "tsc && node -e \"const fs=require('fs');fs.cpSync('src/dut/profiles','dist/dut/profiles',{recursive:true,filter:s=>!s.endsWith('.ts')});fs.cpSync('src/hub/public','dist/hub/public',{recursive:true})\" && node scripts/build-dsh-client.mjs",
+    "build:dsh": "node scripts/build-dsh-client.mjs",
     "start": "node dist/index.js",
     "hub": "node dist/hub.js",
     "dev": "tsc --watch",
@@ -18,8 +19,15 @@
     "test:dut": "node test/dut-offline-test.mjs",
     "test:extract": "node test/extract-visualize-test.mjs",
     "test:hub": "node test/hub-api-test.mjs",
+    "test:hub-dut": "node test/hub-dut-test.mjs",
     "test:sequence": "node test/sequence-test.mjs",
-    "test": "npm run test:dut && npm run test:extract && npm run test:hub && npm run test:sequence"
+    "test:encoding": "node test/encoding-test.mjs",
+    "test:framing": "node test/framing-test.mjs",
+    "test:payload": "node test/payload-test.mjs",
+    "test:history": "node test/history-test.mjs",
+    "test:perf": "node test/perf-test.mjs",
+    "test:dsh": "node test/dsh-client-test.mjs",
+    "test": "npm run test:dut && npm run test:extract && npm run test:hub && npm run test:hub-dut && npm run test:sequence && npm run test:encoding && npm run test:framing && npm run test:payload && npm run test:history && npm run test:perf"
   },
   "files": [
     "dist",

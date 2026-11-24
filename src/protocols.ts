@@ -1,4 +1,3 @@
-import { ReadlineParser } from "@serialport/parser-readline";
 import { DelimiterParser } from "@serialport/parser-delimiter";
 import { Transform } from "stream";
 import type { ProtocolMode, SerialConfig } from "./types.js";
@@ -9,7 +8,9 @@ import type { ProtocolMode, SerialConfig } from "./types.js";
 export function createParser(config: SerialConfig): NodeJS.ReadWriteStream | null {
   switch (config.protocol) {
     case "line":
-      return new ReadlineParser({ delimiter: "\r\n", includeDelimiter: false, encoding: undefined });
+      // Any of CRLF / LF / CR ends a line. A device that emits only "\n" (or
+      // only "\r") must still split, which a CRLF-only parser silently missed.
+      return createLineParser();
 
     case "delimiter": {
       const delimHex = config.delimiter || "0D0A";
@@ -33,6 +34,42 @@ export function createParser(config: SerialConfig): NodeJS.ReadWriteStream | nul
     default:
       return null; // No parser, pass through raw data
   }
+}
+
+/**
+ * Line parser: splits on CRLF, LF, or CR — whichever comes first.
+ *
+ * `\r\n` counts as one terminator, not two, so a Windows-style device does not
+ * produce an empty frame between the CR and the LF. Empty lines are dropped:
+ * a bare terminator carries no payload and would otherwise show as a 0-byte
+ * frame in the console.
+ */
+function createLineParser(): Transform {
+  let buffer = Buffer.alloc(0);
+
+  return new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      buffer = Buffer.concat([buffer, chunk]);
+      let start = 0;
+      for (let i = 0; i < buffer.length; i += 1) {
+        const byte = buffer[i];
+        if (byte !== 0x0a && byte !== 0x0d) continue;
+        const line = buffer.subarray(start, i);
+        if (line.length > 0) this.push(Buffer.from(line));
+        // Swallow the LF that pairs with a preceding CR.
+        if (byte === 0x0d && buffer[i + 1] === 0x0a) i += 1;
+        start = i + 1;
+      }
+      buffer = buffer.subarray(start);
+      callback();
+    },
+    flush(callback) {
+      // A final line without a terminator is still a frame.
+      if (buffer.length > 0) this.push(Buffer.from(buffer));
+      buffer = Buffer.alloc(0);
+      callback();
+    },
+  });
 }
 
 /**

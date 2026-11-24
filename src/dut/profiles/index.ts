@@ -53,6 +53,11 @@ export function reloadProfiles(): number {
   return Object.keys(cache).length;
 }
 
+/** Every loaded profile (panel/profile browser); insertion order of the directory. */
+export function allProfiles(): DutProfile[] {
+  return Object.values(profiles());
+}
+
 export function getProfile(name: string): DutProfile {
   const p = profiles()[name];
   if (!p) {

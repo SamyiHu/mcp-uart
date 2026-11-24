@@ -40,6 +40,15 @@ export class DutManager {
     return this.sessions.has(connectionId);
   }
 
+  /** Every attached session, in attach order (panel discovery, diagnostics). */
+  listSessions(): Array<{ connectionId: string; profile: DutProfile; stats: DutSession["stats"] }> {
+    return [...this.sessions.entries()].map(([connectionId, session]) => ({
+      connectionId,
+      profile: session.profile,
+      stats: session.stats,
+    }));
+  }
+
   getSession(connectionId: string): DutSession {
     const s = this.sessions.get(connectionId);
     if (!s) throw new Error(`No DUT session on ${connectionId}. Call dut_connect first.`);
@@ -74,10 +83,17 @@ export class DutManager {
     return runDutSequence(session, actions, options);
   }
 
-  /** Run the profile's smoke sequence; returns per-step results + summary. */
+  /**
+   * Run the profile's smoke sequence; returns per-step results + summary.
+   * `listeners` lets a UI follow the run live (one callback per finished step).
+   */
   async runSmoke(
     connectionId: string,
-    includeLowPower = false
+    includeLowPower = false,
+    listeners?: {
+      onStart?: (total: number, profile: string) => void;
+      onStep?: (step: DutRunResult, index: number, total: number) => void;
+    }
   ): Promise<{
     profile: string;
     steps: DutRunResult[];
@@ -89,11 +105,14 @@ export class DutManager {
     const session = this.getSession(connectionId);
     const names = [...(session.profile.smoke ?? [])];
     if (includeLowPower) names.push("stop_wake", "freq_query", "wdt_wake", "freq_query");
+    const planned = names.filter((n) => session.profile.commands.some((c) => c.name === n));
 
+    listeners?.onStart?.(planned.length, session.profile.name);
     const steps: DutRunResult[] = [];
-    for (const n of names) {
-      if (!session.profile.commands.some((c) => c.name === n)) continue;
-      steps.push(await this.runCommand(connectionId, n));
+    for (let i = 0; i < planned.length; i++) {
+      const step = await this.runCommand(connectionId, planned[i]);
+      steps.push(step);
+      listeners?.onStep?.(step, i, planned.length);
     }
     const passed = steps.filter((s) => s.verdict === "PASS").length;
     const failed = steps.filter((s) => s.verdict === "FAIL" || s.verdict === "TIMEOUT").length;

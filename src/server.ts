@@ -51,6 +51,8 @@ const messagesBrief = (ms: SerialMessage[]) =>
 export type ServerHooks = {
   /** Shared manager (so an in-process Hub can monitor the same SerialManager). */
   manager?: SerialManager;
+  /** Shared DUT manager (so the Hub can run profiles over the same session). */
+  dut?: DutManager;
   /** Called after a port is successfully opened by MCP tools. */
   onConnectionOpen?: (connectionId: string) => void;
   /** Called when MCP closes a connection. */
@@ -65,7 +67,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
 
   const manager = hooks.manager ?? new SerialManager();
   const monitorProcesses = new Map<string, ReturnType<typeof spawn>>();
-  const dut = new DutManager(manager);
+  const dut = hooks.dut ?? new DutManager(manager);
 
   // ──────────────────────────────────────────────
   // Resources

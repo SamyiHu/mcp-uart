@@ -17,6 +17,57 @@ Serial Port MCP Server for AI agents. Lets Claude, Cline, Cursor, and other MCP-
 
 > `serial_open` / `dut_connect` default `autoMonitor=false` (no terminal popup). Set `autoMonitor=true` for human debugging.
 
+## DeepSeek Harness (DSH) plugin
+
+`dsh-plugin/` packages the same serial stack as a DSH bundle with a native panel
+(sidebar → **串口**): port picker, live TX/RX tape with filters, send box, DTR/RTS
+and Break. It does **not** open a second serial stack — it proxies `/uart/*` to the
+Hub the MCP server already runs, so the panel and the Agent share one session.
+
+```
+dsh-plugin/
+  index.js        Host half: discovery (~/.mcp-uart/hub.json, else probe 8787..8817) + /uart proxy
+  client.js       Carrier: registers the sidebar panel and mounts the shared console module
+  cordis.patch.yml declares BOTH rows: mcp-uart (MCP server) + local-uart (panel)
+  locale/, icon.svg, docs/DETAIL.md
+```
+
+**一个 bundle 管两端**（和 `dsh-instrument-host` 同构）：`cordis.patch.yml` 同时插入
+MCP 行和面板行，装上即有 Agent 串口工具和串口面板，拆掉也是一起。profile 里
+不需要再手工写 `mcp-uart` 的 MCP 行。
+
+The console UI itself lives in **one** file, `src/hub/public/uart-ui.js` (framework-free
+ESM). The standalone page loads it directly; `npm run build:dsh` inlines it into
+`dsh-plugin/client.js`, because the Desktop client cannot import modules over the
+`dsh-app://` scheme. One implementation, two carriers — only the palette differs
+(DSH theme tokens vs. the module's light/dark fallbacks).
+
+Install (Claude/DSH): **Plugins → Add plugin →** pick `dsh-plugin`, or
+
+```bash
+dsh plugin --profile <name> add <abs-path-to>/dsh-plugin
+# then add "@local/dsh-uart" to dsh.profile.bundles in the profile package.json
+```
+
+Restart DSH Desktop after installing (the desktop app locks its profile's
+`node_modules`, so pnpm cannot relink while it runs).
+
+Without DSH nothing changes: the same API and the same browser UI run on the Hub
+port, so a plain browser, Claude Code, or any MCP client keeps working:
+
+```bash
+node dist/index.js          # MCP server + in-process Hub (prints its URL)
+npx mcp-uart-hub            # standalone Hub only
+```
+
+Both front ends are pinned by one contract suite:
+
+```bash
+node test/hub-contract-test.mjs http://127.0.0.1:8787/                 # standalone
+node test/hub-contract-test.mjs http://127.0.0.1:50031/uart/ <token>   # DSH proxy
+node test/fake-hub-server.mjs 8795 %TEMP%/mcp-uart-fake/hub.json       # synthetic frames, no hardware
+```
+
 ## Install
 
 ### From npm
