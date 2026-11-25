@@ -139,4 +139,10 @@ const smoke = await dut.runSmoke("c4", false);
 assert(smoke.passed === profile.smoke.length, `smoke PASS=${profile.smoke.length} (got ${smoke.passed})`);
 assert(smoke.failed === 0, "smoke has no failures");
 
+// Low-power coverage must be profile-declared: a profile without `lowPower`
+// gains no steps, and the engine never invents device-specific command names.
+for (const k of Object.keys(writeCount)) delete writeCount[k];
+const smokeLow = await dut.runSmoke("c4", true);
+assert(smokeLow.passed === profile.smoke.length, `includeLowPower adds nothing when the profile declares none (got ${smokeLow.passed})`);
+
 console.log("\n=== dut offline tests done ===");

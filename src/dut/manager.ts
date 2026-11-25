@@ -104,7 +104,8 @@ export class DutManager {
   }> {
     const session = this.getSession(connectionId);
     const names = [...(session.profile.smoke ?? [])];
-    if (includeLowPower) names.push("stop_wake", "freq_query", "wdt_wake", "freq_query");
+    // Low-power coverage is a profile decision, never a hardcoded command list.
+    if (includeLowPower) names.push(...(session.profile.lowPower ?? []));
     const planned = names.filter((n) => session.profile.commands.some((c) => c.name === n));
 
     listeners?.onStart?.(planned.length, session.profile.name);

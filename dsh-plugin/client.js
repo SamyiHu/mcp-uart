@@ -560,6 +560,9 @@ window.__ModuleLoader__.load({
         oninput: (event) => { state.dut.query = event.target.value; renderDutCommands() },
       })
       refs.dutLow = el('input', { type: 'checkbox', onchange: (event) => { state.dut.includeLowPower = event.target.checked } })
+      // Hidden unless the selected profile declares low-power steps: a profile is
+      // free to have none, and a checkbox that does nothing is worse than no checkbox.
+      refs.dutLowLabel = el('label', { class: 'uart-toggle', style: { display: 'none' } }, refs.dutLow, t('dutLowPower'))
       refs.dutSmoke = el('button', { class: 'uart-button is-primary', type: 'button', text: t('dutRunSmoke'), onclick: runSmoke })
       refs.dutSteps = el('div', { class: 'uart-dut-steps' })
       refs.dutCmds = el('div', { class: 'uart-cmd-list' })
@@ -594,7 +597,7 @@ window.__ModuleLoader__.load({
           el('div', { class: 'uart-dut-title', text: t('dutSmoke') }),
           refs.dutSummary,
           el('span', { class: 'uart-spacer' }),
-          el('label', { class: 'uart-toggle' }, refs.dutLow, t('dutLowPower')),
+          refs.dutLowLabel,
           refs.dutCopyReport,
           refs.dutSmoke,
         ),
@@ -1302,6 +1305,13 @@ window.__ModuleLoader__.load({
         refs.dutConnect.disabled = state.dut.connecting || profile === null || (active === null && String(state.dutPort ?? '').trim().length === 0)
         refs.dutConnect.textContent = state.dut.connecting ? t('dutConnecting') : t('dutConnect')
         refs.dutDesc.textContent = profile === null ? '' : profile.description
+        // Only offer low-power coverage when the profile actually declares it.
+        const lowPowerCount = Array.isArray(profile?.lowPower) ? profile.lowPower.length : 0
+        refs.dutLowLabel.style.display = lowPowerCount > 0 ? '' : 'none'
+        if (lowPowerCount === 0) {
+          refs.dutLow.checked = false
+          state.dut.includeLowPower = false
+        }
         // Frame contract and wiring, so the operator can sanity-check the hookup
         // without opening the profile JSON.
         refs.dutMeta.textContent = profile === null

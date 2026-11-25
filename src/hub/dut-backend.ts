@@ -112,6 +112,7 @@ export function createDutBackend(dut: DutManager, manager: SerialManager): HubDu
           note: command.note,
         })),
         smoke: [...(profile.smoke ?? [])],
+        lowPower: [...(profile.lowPower ?? [])],
       }));
     },
 

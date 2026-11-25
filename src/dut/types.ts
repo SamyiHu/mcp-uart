@@ -139,6 +139,12 @@ export interface DutProfile {
   commands: DutCommandDef[];
   /** Command names run by dut_smoke. */
   smoke?: string[];
+  /**
+   * Extra command names appended to the smoke run when the operator asks for
+   * low-power coverage. Declared by the profile: the engine never assumes any
+   * device-specific command name.
+   */
+  lowPower?: string[];
 }
 
 /** A frame successfully parsed out of the RX byte stream. */

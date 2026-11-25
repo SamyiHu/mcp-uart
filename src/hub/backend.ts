@@ -43,6 +43,8 @@ export type DutProfileSummary = {
   frame: { length: number; checksumIndex: number; checksum: string };
   commands: Array<{ name: string; title: string; fpgaSuitable: boolean; note?: string }>;
   smoke: string[];
+  /** Extra commands the profile adds when low-power coverage is requested. */
+  lowPower?: string[];
 };
 
 export type DutStats = {

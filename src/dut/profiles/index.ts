@@ -75,6 +75,7 @@ export function listProfiles(): Array<{
   serial: { baudRate: number; wiring?: string };
   commands: Array<{ name: string; title: string; fpgaSuitable: boolean }>;
   smoke: string[];
+  lowPower: string[];
 }> {
   return Object.values(profiles()).map((p) => ({
     name: p.name,
@@ -87,5 +88,6 @@ export function listProfiles(): Array<{
       fpgaSuitable: c.fpgaSuitable ?? false,
     })),
     smoke: p.smoke ?? [],
+    lowPower: p.lowPower ?? [],
   }));
 }
