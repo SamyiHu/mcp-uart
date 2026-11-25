@@ -13,7 +13,7 @@ Serial Port MCP Server for AI agents. Lets Claude, Cline, Cursor, and other MCP-
 - **6 Protocols**: Raw, Line, Custom delimiter, Modbus RTU, Hex frame, SLIP (RFC 1055)
 - **Smart Wait**: `serial_wait` collects a full device response (silence detection), `serial_wait_frame` returns on first frame
 - **File Logging**: `serial_start_monitor` logs to a file (no popup by default)
-- **DUT Profile-Driven Testing**: chip logic lives in `src/dut/profiles/*.json` (W6729 etc.)
+- **DUT Profile-Driven Testing**: chip logic lives in `src/dut/profiles/*.json` (frame-demo etc.)
 
 > `serial_open` / `dut_connect` default `autoMonitor=false` (no terminal popup). Set `autoMonitor=true` for human debugging.
 
@@ -292,7 +292,7 @@ Tools:
 | Tool | Description |
 |------|-------------|
 | `dut_list_profiles` | List profiles + their command tables (entry point) |
-| `dut_connect` | Open port AND attach protocol session (e.g. w6729: 727000 8N1, 4-byte frames, 0xFF-sum checksum) |
+| `uart_dut` (action=connect) | Open port AND attach protocol session (e.g. frame-demo: 115200 8N1, 4-byte frames, 0xFF-sum checksum) |
 | `dut_test` | Run one named test with auto judgment; `format=structured\|human` |
 | `dut_extract` | Run a test then extract one field via path |
 | `dut_cmd` | Raw framed command (checksum auto-appended), no judgment |
@@ -302,11 +302,11 @@ Tools:
 | `dut_send_raw` | Raw bytes without framing (echo bytes, out-of-protocol) |
 | `dut_disconnect` | Detach session + close port |
 
-Example flow (W6729 on FPGA):
+Example flow (frame-demo on FPGA):
 
 ```
 "列出可用的 DUT profile"          -> dut_list_profiles
-"用 COM5 连接 w6729"              -> dut_connect(path=COM5, profile=w6729)
+"用 COM5 连接 frame-demo"          -> uart_dut(action=connect, path=COM5, profile=frame-demo)
 "跑一遍冒烟"                      -> dut_smoke
 "导出冒烟报告 HTML"               -> serial_visualize_smoke(profile, steps)
 "测 P2 口输出高 0x55"             -> dut_test(io_output, cmd=0x15, p1=0xFF, p2=0x55)

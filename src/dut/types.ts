@@ -10,7 +10,7 @@
  */
 
 export type ChecksumAlgorithm =
-  | "sum-complement" // ck = 0xFF - (sum of payload bytes)        (W6729 FT fw)
+  | "sum-complement" // ck = 0xFF - (sum of payload bytes)
   | "sum"            // ck = sum of payload bytes
   | "xor";           // ck = XOR of payload bytes
 
@@ -27,7 +27,7 @@ export interface FrameDescriptor {
  * Generic action primitives a command is built from. Values accept decimal
  * numbers or hex strings ("0x5A") for readability in profile JSON files.
  *
- * W6729 handshake protocol (verified on hardware):
+ * Frame handshake protocol:
  *   send-frame → DUT echoes the frame → resend (handshake) → DUT sends result.
  * The DUT's Send_Read_N_Byte always READS the next frame before replying, so
  * every command needs its frame sent twice (dispatch + handshake).

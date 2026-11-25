@@ -1385,11 +1385,11 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
   }
 
   function sessionProbeHex(frame: { cmd: any; p1?: any; p2?: any }): string {
-    // Build with w6729-compatible checksum only for echo-conflict check; actual send uses session profile.
+    // Build with the profile checksum only for the echo-conflict check; the actual send uses the session profile.
     const cmd = Number(frame.cmd);
     const p1 = Number(frame.p1 ?? 0);
     const p2 = Number(frame.p2 ?? 0);
-    // Use sum-complement over 3 data bytes (W6729). Good enough for echo substring check.
+    // Use sum-complement over the 3 data bytes. Good enough for the echo substring check.
     const acc = (cmd + p1 + p2) & 0xff;
     const ck = (0xff - acc) & 0xff;
     return [cmd, p1, p2, ck].map((b) => (b & 0xff).toString(16).padStart(2, "0").toUpperCase()).join("");

@@ -10,7 +10,7 @@
     "mcp-uart-hub": "dist/hub.js"
   },
   "scripts": {
-    "build": "tsc && node -e \"const fs=require('fs');fs.cpSync('src/dut/profiles','dist/dut/profiles',{recursive:true,filter:s=>!s.endsWith('.ts')});fs.cpSync('src/hub/public','dist/hub/public',{recursive:true})\" && node scripts/build-dsh-client.mjs",
+    "build": "tsc && node scripts/copy-assets.mjs && node scripts/build-dsh-client.mjs",
     "build:dsh": "node scripts/build-dsh-client.mjs",
     "start": "node dist/index.js",
     "hub": "node dist/hub.js",

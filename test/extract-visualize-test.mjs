@@ -59,7 +59,7 @@ assert(
 );
 
 const smoke = renderSmokeHtml({
-  profile: "w6729",
+  profile: "frame-demo",
   steps: [run],
   passed: 1,
   failed: 0,

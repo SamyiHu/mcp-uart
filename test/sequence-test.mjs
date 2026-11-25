@@ -14,7 +14,7 @@ const assert = (cond, msg) => {
   } else console.log("ok:", msg);
 };
 
-const profile = getProfile("w6729");
+const profile = getProfile("frame-demo");
 const replyWith = (b3) => {
   const b = [...b3, 0];
   b[3] = checksumOf(b, profile);
@@ -200,7 +200,7 @@ assert(threw, "matchHex requires ≥4 chars");
 {
   const mock = new MockSerial();
   const dut = new DutManager(mock);
-  dut.attach("c-mgr", "w6729");
+  dut.attach("c-mgr", "frame-demo");
   const r = await dut.runSequence("c-mgr", [
     { type: "wait", ms: 5 },
     { type: "send-raw", hex: "5A" },

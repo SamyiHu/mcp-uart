@@ -39,7 +39,7 @@ async function main() {
   assert(decode(bytes, "utf8") === expected, `encoding=utf8 makes data readable text (got ${decode(bytes, "utf8")})`);
 
   // ── 2. the DUT profile connection must no longer use hex ──
-  const cfg = dutSerialConfig("COM6", Object.keys(profileNames())[0] ?? "w6729");
+  const cfg = dutSerialConfig("COM6", Object.keys(profileNames())[0] ?? "frame-demo");
   assert(cfg.encoding !== "hex", `dut_connect uses a text encoding, not hex (got ${cfg.encoding})`);
 
   // ── 3. the console repairs a legacy hex-shaped frame ──
@@ -56,7 +56,7 @@ async function main() {
 /** Profile names are only used to build a config; any known name works. */
 function profileNames() {
   try {
-    return { w6729: true };
+    return { "frame-demo": true };
   } catch {
     return {};
   }

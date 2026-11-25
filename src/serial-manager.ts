@@ -59,7 +59,7 @@ export class SerialManager {
   /**
    * Register a raw-RX-bytes hook for a connection. The hook receives every
    * incoming chunk BEFORE any parser/encoding handling — protocol layers
-   * (e.g. W6729 framing) use this for byte-accurate frame extraction.
+   * (e.g. length-prefixed framing) use this for byte-accurate frame extraction.
    */
   addDataHook(connectionId: string, cb: (data: Buffer) => void): void {
     if (!this.connections.has(connectionId)) {
@@ -77,7 +77,7 @@ export class SerialManager {
 
   /**
    * Set modem control signals on a connection. Used e.g. to generate a
-   * break pulse on the TX line, which the W6729 board sees as a falling
+   * break pulse on the TX line, which the target board sees as a falling
    * edge on its RX wake pin (STOP/IDLE wake).
    */
   setSignals(

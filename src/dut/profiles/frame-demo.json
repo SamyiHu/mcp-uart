@@ -1,0 +1,70 @@
+{
+  "name": "frame-demo",
+  "chip": "Generic framed device",
+  "description": "通用帧协议示例：115200 8N1，帧 = 3 个数据字节 + 1 个校验字节（校验 = 0xFF - 三字节累加和）。两段式握手：发命令帧 → 设备回显同帧 → 重发同一帧作为握手 → 设备回结果帧。判定值可按字节位置约定。注意：不要连续发送字节流，回显期间到达的字节会被丢弃。",
+  "serial": {
+    "baudRate": 115200,
+    "dataBits": 8,
+    "stopBits": 1,
+    "parity": "none",
+    "wiring": "USB 串口适配器 TX->设备 RX、RX->设备 TX，共地。唤醒类命令需要 break 脉冲。"
+  },
+  "frame": {
+    "length": 4,
+    "checksumIndex": 3,
+    "checksum": "sum-complement"
+  },
+  "commands": [
+    {
+      "name": "read_value",
+      "title": "读取测量值 (0x01)",
+      "actions": [
+        { "type": "send-frame", "cmd": "0x01", "p1": "0x00", "p2": "0x00" },
+        { "type": "expect-echo", "timeoutMs": 3000 },
+        { "type": "get-result", "timeoutMs": 2500 }
+      ],
+      "judge": { "echoMatches": true, "resultEchoesCmd": true, "bytes": { "1": 0 } },
+      "note": "结果帧 b1=状态码，0 表示正常。",
+      "fpgaSuitable": true
+    },
+    {
+      "name": "self_test",
+      "title": "自检 (0x02)",
+      "actions": [
+        { "type": "send-frame", "cmd": "0x02", "p1": "0x00", "p2": "0x00" },
+        { "type": "expect-echo", "timeoutMs": 3000 },
+        { "type": "get-result", "timeoutMs": 4000 }
+      ],
+      "judge": { "echoMatches": true, "resultEchoesCmd": true, "bytes": { "1": 0, "2": 0 } },
+      "note": "结果帧 b1/b2 为自检错误码，全 0 通过。",
+      "fpgaSuitable": true
+    },
+    {
+      "name": "device_id",
+      "title": "设备 ID (0x03)",
+      "actions": [
+        { "type": "send-frame", "cmd": "0x03", "p1": "0x00", "p2": "0x00" },
+        { "type": "expect-echo", "timeoutMs": 3000 },
+        { "type": "get-result", "timeoutMs": 3000 }
+      ],
+      "judge": { "echoMatches": true, "resultEchoesCmd": true },
+      "note": "结果帧 b1/b2 = 两个字节的设备标识，供人工比对。",
+      "fpgaSuitable": true
+    },
+    {
+      "name": "echo_roundtrip",
+      "title": "回环校验 (0x04)",
+      "actions": [
+        { "type": "send-frame", "cmd": "0x04", "p1": "0x50", "p2": "0x00" },
+        { "type": "expect-echo", "timeoutMs": 3000 },
+        { "type": "send-raw", "hex": "5A", "note": "测试字节" },
+        { "type": "expect-extra", "hex": "5A", "timeoutMs": 1500 },
+        { "type": "get-result", "timeoutMs": 4000 }
+      ],
+      "judge": { "echoMatches": true, "resultEchoesCmd": true, "bytes": { "2": "0x5A" }, "extraContains": "5A" },
+      "note": "回显后立即发一个测试字节，设备应把它回送并在结果帧的 b2 里报告。",
+      "fpgaSuitable": true
+    }
+  ],
+  "smoke": ["read_value", "self_test"]
+}

@@ -1,11 +1,13 @@
 /**
  * Offline logic test for the DUT protocol layer (no hardware needed).
- * Models the VERIFIED two-phase W6729 handshake:
- *   write#1 of a frame → echo;  write#2 → result  (ram: write#3 → result2)
- * Raw byte writes are echoed back verbatim (ISR echo).
+ *
+ * Uses the shipped `frame-demo` profile: a 4-byte frame (3 payload bytes + a
+ * sum-complement checksum) with a two-phase handshake —
+ *   write #1 of a frame → device echoes it; write #2 → device sends the result.
+ * Raw byte writes are echoed back verbatim.
  */
 import { DutSession, checksumOf } from "../dist/dut/session.js";
-import { DutManager, formatRun } from "../dist/dut/manager.js";
+import { DutManager } from "../dist/dut/manager.js";
 import { getProfile } from "../dist/dut/profiles/index.js";
 
 class MockSerial {
@@ -21,40 +23,41 @@ class MockSerial {
   rx(bytes) { for (const cb of this.hooks) cb(Buffer.from(bytes)); }
 }
 
-const profile = getProfile("w6729");
+const profile = getProfile("frame-demo");
 const assert = (cond, msg) => {
   if (!cond) { console.error("FAIL:", msg); process.exitCode = 1; }
   else console.log("ok:", msg);
 };
+/** Build a result frame for the given payload bytes (checksum filled in). */
 const replyWith = (b3) => { const b = [...b3, 0]; b[3] = checksumOf(b, profile); return b; };
 
 // ── 1. checksum + frame build ──
-assert(checksumOf([0x06, 0, 0, 0], profile) === 0xF9, "instruction 帧 ck=0xF9");
-assert(checksumOf([0x0F, 0x00, 0xFF, 0], profile) === 0xF1, "freq 结果帧 ck=0xF1(硬件实测值)");
+assert(checksumOf([0x01, 0x00, 0x00, 0x00], profile) === 0xFE, "read_value frame ck=0xFE");
+assert(checksumOf([0x02, 0x00, 0x00, 0x00], profile) === 0xFD, "self_test frame ck=0xFD");
 const s1 = new DutSession(profile, "c1", new MockSerial());
-assert(s1.buildFrame(0x0F, 0x04, 0x00).toString("hex").toUpperCase() === "0F0400EC", "freq_query 完整帧=0F0400EC");
+assert(s1.buildFrame(0x04, 0x50, 0x00).toString("hex").toUpperCase() === "045000AB", "echo_roundtrip full frame = 04 50 00 AB");
 
 // ── 2. chunked RX + noise resync ──
 const mock = new MockSerial();
 const s2 = new DutSession(profile, "c2", mock);
 s2.attach();
-mock.rx([0x5A, 0x03]);            // noise + frame start split
+mock.rx([0x5A, 0x01]);            // noise byte, then the frame start, split across reads
 mock.rx([0x00, 0x00]);
-mock.rx([0xFC, 0x03, 0xCB]);
-mock.rx([0x00, 0x31]);
+mock.rx([0xFE, 0x02, 0x00]);
+mock.rx([0x00, 0xFD]);
 const snap = s2.snapshot();
-assert(snap.extras.length === 1 && snap.extras[0] === 0x5A, "噪声字节进入extras");
-assert(snap.frames.length === 2 && snap.frames[1].bytes.join(",") === "3,203,0,49", "跨chunk解析2帧");
+assert(snap.extras.length === 1 && snap.extras[0] === 0x5A, "noise byte lands in extras");
+assert(snap.frames.length === 2 && snap.frames[1].bytes.join(",") === "2,0,0,253", "cross-chunk parse yields 2 frames");
 
-// ── 3. bad checksum → resync by 1 byte ──
+// ── 3. bad checksum → resync by one byte ──
 const mock3 = new MockSerial();
 const s3 = new DutSession(profile, "c3", mock3);
 s3.attach();
-mock3.rx([0xFF, 0x06, 0x00, 0x00, 0xF9]);
+mock3.rx([0xFF, 0x01, 0x00, 0x00, 0xFE]);
 const snap3 = s3.snapshot();
-assert(snap3.extras.length === 1 && snap3.frames.length === 1, "坏字节跳过后恢复同步");
+assert(snap3.extras.length === 1 && snap3.frames.length === 1, "bad byte skipped, sync recovered");
 
-// ── 4. full command run: 两段式握手 mock ──
+// ── 4. full command run: two-phase handshake over the mock ──
 const mock4 = new MockSerial();
 const dut = new DutManager(mock4);
 const origWrite = mock4.write.bind(mock4);
@@ -64,47 +67,36 @@ mock4.write = (id, hex) => {
   writeCount[hex] = (writeCount[hex] || 0) + 1;
   const n = writeCount[hex];
   setTimeout(() => {
-    if (hex.length === 2) { mock4.rx(Buffer.from(hex, "hex")); return; }  // raw byte ISR echo
+    if (hex.length === 2) { mock4.rx(Buffer.from(hex, "hex")); return; }  // raw byte echo
     if (n === 1) { mock4.rx(Buffer.from(hex, "hex")); return; }            // frame echo
     const key = hex.slice(0, 2);
-    if (key === "03") {   // ram: 2 result frames across 2 handshakes
-      if (n === 2) mock4.rx(replyWith([0x03, 0x00, 0x00]));
-      else if (n === 3) mock4.rx(replyWith([0x03, 0xCB, 0x00]));
-      return;
-    }
-    const r = {
-      "0F": [0x0F, 0x00, 0xFF],
-      "06": [0x06, 0x00, 0x00],
-      "0E": [0x0E, 0x55, 0x55],
-      "F0": [0xF0, 0xAC, 0xCA],
-      "05": [0x05, 0x00, 0x00],
-      "EF": [0xEF, 0x00, 0x00],
-      "A0": [0xA0, 0x50, 0x5A],
+    const reply = {
+      "01": [0x01, 0x00, 0x00],   // read_value: status byte 0
+      "02": [0x02, 0x00, 0x00],   // self_test: both codes 0
+      "03": [0x03, 0x12, 0x34],   // device_id: two id bytes
+      "04": [0x04, 0x00, 0x5A],   // echo_roundtrip: reports the test byte
     }[key];
-    if (r) mock4.rx(replyWith(r));
+    if (reply) mock4.rx(replyWith(reply));
   }, 5);
   return p;
 };
-dut.attach("c4", "w6729");
+dut.attach("c4", "frame-demo");
 
-let r = await dut.runCommand("c4", "freq_query");
-assert(r.verdict === "PASS", `freq_query PASS (got ${r.verdict}${r.failedChecks ? " — " + r.failedChecks : ""})`);
-assert(r.frames.length === 2 && r.frames[0].bytes.join() === "15,4,0,236", "帧1=回显原帧");
+let r = await dut.runCommand("c4", "read_value");
+assert(r.verdict === "PASS", `read_value PASS (got ${r.verdict}${r.failedChecks ? " — " + r.failedChecks : ""})`);
+assert(r.frames.length === 2 && r.frames[0].bytes.join() === "1,0,0,254", "first frame is the echo");
 
-r = await dut.runCommand("c4", "instruction");
-assert(r.verdict === "PASS", `instruction PASS (got ${r.verdict})`);
+r = await dut.runCommand("c4", "self_test");
+assert(r.verdict === "PASS", `self_test PASS (got ${r.verdict})`);
 
-r = await dut.runCommand("c4", "ram");
-assert(r.verdict === "PASS", `ram 两段握手+双结果 PASS (got ${r.verdict}${r.failedChecks ? " — " + r.failedChecks : ""})`);
+r = await dut.runCommand("c4", "device_id");
+assert(r.verdict === "PASS", `device_id PASS (got ${r.verdict})`);
 
-r = await dut.runCommand("c4", "crc");
-assert(r.verdict === "PASS", `crc PASS (got ${r.verdict})`);
+r = await dut.runCommand("c4", "echo_roundtrip");
+assert(r.verdict === "PASS", `echo_roundtrip (with 0x5A echo) PASS (got ${r.verdict}${r.failedChecks ? " — " + r.failedChecks : ""})`);
+assert(r.extras.includes(0x5A), "0x5A appears in extras");
 
-r = await dut.runCommand("c4", "uart0_echo");
-assert(r.verdict === "PASS", `uart0_echo(含0x5A回显) PASS (got ${r.verdict}${r.failedChecks ? " — " + r.failedChecks : ""})`);
-assert(r.extras.includes(0x5A), "0x5A 出现在额外字节");
-
-// FAIL path: instruction 错误返回 — use a FRESH session to avoid leftover frame state
+// ── 5. FAIL path: a non-zero status byte must fail the run ──
 const mockFail = new MockSerial();
 const dutFail = new DutManager(mockFail);
 const origWriteF = mockFail.write.bind(mockFail);
@@ -114,22 +106,22 @@ mockFail.write = (id, hex) => {
   nF++;
   setTimeout(() => {
     if (nF === 1) mockFail.rx(Buffer.from(hex, "hex"));
-    else if (hex.startsWith("06")) mockFail.rx(Buffer.from(replyWith([0x06, 0x01, 0x00])));
+    else mockFail.rx(Buffer.from(replyWith([0x01, 0x01, 0x00])));
   }, 5);
   return p;
 };
-dutFail.attach("cf", "w6729");
-r = await dutFail.runCommand("cf", "instruction");
-assert(r.verdict === "FAIL", `instruction 错误结果判定 FAIL (got ${r.verdict}${r.failedChecks ? " — " + r.failedChecks : ""})`);
+dutFail.attach("cf", "frame-demo");
+r = await dutFail.runCommand("cf", "read_value");
+assert(r.verdict === "FAIL", `non-zero status fails the run (got ${r.verdict}${r.failedChecks ? " — " + r.failedChecks : ""})`);
 dutFail.detach("cf");
 
-// TIMEOUT path: 完全无应答
+// ── 6. TIMEOUT path: a silent device must not hang the runner ──
 mock4.write = (id, hex) => origWrite(id, hex);
 const t0 = Date.now();
-r = await dut.runCommand("c4", "freq_query");
-assert(r.verdict === "TIMEOUT" && Date.now() - t0 >= 700, `无应答判定 TIMEOUT (got ${r.verdict})`);
+r = await dut.runCommand("c4", "read_value");
+assert(r.verdict === "TIMEOUT" && Date.now() - t0 >= 700, `silent device yields TIMEOUT (got ${r.verdict})`);
 
-// ── 5. smoke over mock ──
+// ── 7. smoke over the mock ──
 for (const k of Object.keys(writeCount)) delete writeCount[k];
 mock4.write = (id, hex) => {
   const p = origWrite(id, hex);
@@ -138,20 +130,13 @@ mock4.write = (id, hex) => {
   setTimeout(() => {
     if (hex.length === 2) { mock4.rx(Buffer.from(hex, "hex")); return; }
     if (n === 1) { mock4.rx(Buffer.from(hex, "hex")); return; }
-    const key = hex.slice(0, 2);
-    if (key === "03") {
-      if (n === 2) mock4.rx(replyWith([0x03, 0x00, 0x00]));
-      else if (n === 3) mock4.rx(replyWith([0x03, 0xCB, 0x00]));
-      return;
-    }
-    const m = { "0F": [0x0F, 0x00, 0xFF], "06": [0x06, 0x00, 0x00], "0E": [0x0E, 0x55, 0x55], "F0": [0xF0, 0xAC, 0xCA], "05": [0x05, 0x00, 0x00], "EF": [0xEF, 0x00, 0x00], "A0": [0xA0, 0x50, 0x5A] }[key];
-    if (m) mock4.rx(replyWith(m));
+    const reply = { "01": [0x01, 0x00, 0x00], "02": [0x02, 0x00, 0x00] }[hex.slice(0, 2)];
+    if (reply) mock4.rx(replyWith(reply));
   }, 5);
   return p;
 };
-const smoke = await dut.runSmoke("c4");
-assert(smoke.steps.length === 7, `smoke 序列7步 (got ${smoke.steps.length})`);
-console.log(`smoke: PASS=${smoke.passed} FAIL=${smoke.failed} REPORT=${smoke.report}`);
-assert(smoke.allPassed, "smoke 整体通过");
+const smoke = await dut.runSmoke("c4", false);
+assert(smoke.passed === profile.smoke.length, `smoke PASS=${profile.smoke.length} (got ${smoke.passed})`);
+assert(smoke.failed === 0, "smoke has no failures");
 
-console.log("\n=== 全部离线测试完成 ===");
+console.log("\n=== dut offline tests done ===");

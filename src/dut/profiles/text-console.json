@@ -1,0 +1,56 @@
+{
+  "name": "text-console",
+  "chip": "Generic text console",
+  "description": "通用文本控制台示例：115200 8N1，无成帧协议——用 length=1 的帧定义让全部 RX 文本落进 extras，判定用 extraContains 匹配 ASCII 串。命令为单字节控制台命令。",
+  "serial": {
+    "baudRate": 115200,
+    "dataBits": 8,
+    "stopBits": 1,
+    "parity": "none",
+    "wiring": "USB 串口适配器 TX->RX、RX->TX，共地。"
+  },
+  "frame": {
+    "length": 1,
+    "checksumIndex": 0,
+    "checksum": "xor"
+  },
+  "commands": [
+    {
+      "name": "ping",
+      "title": "连通性检查 (P)",
+      "actions": [
+        { "type": "send-raw", "hex": "50", "note": "'P'" },
+        { "type": "wait", "ms": 300 },
+        { "type": "expect-extra", "hex": "504F4E47", "timeoutMs": 2000, "note": "'PONG'" }
+      ],
+      "judge": { "extraContains": "504F4E47" },
+      "note": "发 'P' 期望回 'PONG'。",
+      "fpgaSuitable": true
+    },
+    {
+      "name": "status",
+      "title": "状态读取 (S)",
+      "actions": [
+        { "type": "send-raw", "hex": "53", "note": "'S'" },
+        { "type": "wait", "ms": 300 },
+        { "type": "expect-extra", "hex": "5354415455533A", "timeoutMs": 2000, "note": "'STATUS:'" }
+      ],
+      "judge": { "extraContains": "5354415455533A" },
+      "note": "发 'S' 期望回 'STATUS: ...'。",
+      "fpgaSuitable": true
+    },
+    {
+      "name": "version",
+      "title": "固件版本 (V)",
+      "actions": [
+        { "type": "send-raw", "hex": "56", "note": "'V'" },
+        { "type": "wait", "ms": 300 },
+        { "type": "expect-extra", "hex": "5645523A", "timeoutMs": 2000, "note": "'VER:'" }
+      ],
+      "judge": { "extraContains": "5645523A" },
+      "note": "发 'V' 期望回 'VER: ...'。",
+      "fpgaSuitable": true
+    }
+  ],
+  "smoke": ["ping", "status"]
+}

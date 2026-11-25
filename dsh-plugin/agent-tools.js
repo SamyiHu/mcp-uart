@@ -83,7 +83,7 @@ const dutParameters = {
         + 'disconnect: end the DUT session. run: execute one command by name. smoke: run the profile smoke sequence. '
         + 'status: DUT session state.',
     },
-    profile: { type: 'string', description: 'Profile name, e.g. w6729 (action=connect).' },
+    profile: { type: 'string', description: 'Profile name, e.g. frame-demo (action=connect).' },
     path: { type: 'string', description: 'Serial port override (action=connect).' },
     baudRate: { type: 'integer', description: 'Baud rate override (action=connect).' },
     name: { type: 'string', description: 'Command name (action=run).' },
