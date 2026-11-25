@@ -437,11 +437,11 @@ export function createUartUi({ root, apiBase = './', locale = 'zh', externalUrl 
     'aria-hidden': 'true',
   })
   refs.rateLabel = el('span', { class: 'uart-rate', text: '0/s' })
-  refs.ratioBar = el('div', { class: 'uart-ratio' })
-  refs.ratioRx = el('span', { class: 'uart-ratio-rx', style: { width: '0%' } })
-  refs.ratioTx = el('span', { class: 'uart-ratio-tx', style: { width: '0%' } })
-  refs.ratioBar.append(refs.ratioRx, refs.ratioTx)
-  refs.ratioLabel = el('span', { class: 'uart-rate', text: t('dutLabelFrames', { parsed: 0, sent: 0 }) })
+  // Direction totals, as text. A full-width RX bar used to sit here and read
+  // like a progress bar ("is it 100% done?"), when it only meant "no TX yet".
+  refs.rxCount = el('span', { class: 'uart-tally is-rx', text: t('tallyRx', { count: 0 }) })
+  refs.txCount = el('span', { class: 'uart-tally is-tx', text: t('tallyTx', { count: 0 }) })
+  refs.tally = el('span', { class: 'uart-tally-group' }, refs.rxCount, refs.txCount)
 
   const tapeHead = el(
     'div',
@@ -462,8 +462,7 @@ export function createUartUi({ root, apiBase = './', locale = 'zh', externalUrl 
       { class: 'uart-tape-row uart-tape-meta' },
       refs.spark,
       refs.rateLabel,
-      refs.ratioBar,
-      refs.ratioLabel,
+      refs.tally,
       el('span', { class: 'uart-spacer' }),
       refs.hexToggle,
       el('label', { class: 'uart-toggle' }, refs.ascii, t('ascii')),
@@ -821,11 +820,13 @@ export function createUartUi({ root, apiBase = './', locale = 'zh', externalUrl 
     const recent = rates.slice(-5)
     const perSecond = Math.round(recent.reduce((sum, value) => sum + value, 0) / Math.max(1, recent.length))
     refs.rateLabel.textContent = `${perSecond}/s`
-    const total = state.rxTotal + state.txTotal
-    const rxPercent = total === 0 ? 0 : Math.round((state.rxTotal / total) * 100)
-    refs.ratioRx.style.width = `${rxPercent}%`
-    refs.ratioTx.style.width = `${100 - rxPercent}%`
-    refs.ratioLabel.textContent = `RX ${state.rxTotal} · TX ${state.txTotal}`
+    // Idle is not an error — dim the rate instead of shouting a bare "0/s" next
+    // to a long frame list.
+    refs.rateLabel.classList.toggle('is-idle', perSecond === 0)
+    refs.rateLabel.title = t('rateHint')
+    refs.rxCount.textContent = t('tallyRx', { count: state.rxTotal })
+    refs.txCount.textContent = t('tallyTx', { count: state.txTotal })
+    refs.tally.title = t('tallyHint')
   }
 
   function sync() {
@@ -1856,6 +1857,10 @@ const ZH = {
   dutRunSmoke: '运行冒烟',
   dutRunning: '运行中…',
   dutLowPower: '含低功耗',
+  tallyRx: 'RX {count}',
+  tallyTx: 'TX {count}',
+  tallyHint: '本次会话累计接收 / 发送的帧数',
+  rateHint: '最近 5 秒的平均帧率；折线是最近 60 秒的走势',
   dutCommands: '命令',
   dutCommandsCount: '{count} 条',
   dutNoProfile: '没有可用的编排配置',
@@ -1987,6 +1992,10 @@ const EN = {
   dutRunSmoke: 'Run smoke',
   dutRunning: 'Running…',
   dutLowPower: 'Low power',
+  tallyRx: 'RX {count}',
+  tallyTx: 'TX {count}',
+  tallyHint: 'Frames received / sent in this session',
+  rateHint: 'Average frame rate over the last 5 s; the line is the last 60 s',
   dutCommands: 'Commands',
   dutCommandsCount: '{count} commands',
   dutNoProfile: 'No DUT profile is available',
@@ -2168,9 +2177,10 @@ const CSS = `
 .uart-tape-meta { gap: 10px; color: var(--uart-text-2); font-size: 11px; }
 .uart-spark { width: 120px; height: 24px; flex: none; color: var(--uart-brand); }
 .uart-rate { font-size: 11px; color: var(--uart-text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.uart-ratio { display: flex; width: 96px; height: 6px; flex: none; border-radius: 999px; overflow: hidden; background: var(--uart-surface-2); }
-.uart-ratio-rx { height: 100%; background: color-mix(in srgb, var(--uart-rx) 72%, transparent); }
-.uart-ratio-tx { height: 100%; background: color-mix(in srgb, var(--uart-tx) 72%, transparent); }
+.uart-rate.is-idle { opacity: 0.55; }
+.uart-tally-group { display: inline-flex; align-items: baseline; gap: 10px; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.uart-tally.is-rx { color: var(--uart-ok); }
+.uart-tally.is-tx { color: var(--uart-brand); }
 .uart-tape-head .uart-input { height: 26px; width: 118px; font-size: 11.5px; }
 .uart-tape-head .uart-select { height: 26px; width: auto; font-size: 11.5px; }
 .uart-spacer { flex: 1 1 auto; }
