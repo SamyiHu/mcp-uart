@@ -152,7 +152,13 @@ export function createAgentTools(hubUrl) {
           if (args.encoding) body.encoding = args.encoding
           if (args.protocol) body.protocol = args.protocol
           const data = await callHub(url, 'api/connect', { method: 'POST', body })
-          return text(`opened ${args.path} @ ${body.baudRate} (connection ${data.connectionId ?? '?'})`)
+          // The Hub hands over an already-open port instead of closing and
+          // reopening it, so say so rather than implying a fresh open.
+          return text(
+            data.reused === true
+              ? `attached to the open session on ${args.path} @ ${body.baudRate} (connection ${data.connectionId ?? '?'})`
+              : `opened ${args.path} @ ${body.baudRate} (connection ${data.connectionId ?? '?'})`,
+          )
         }
         case 'close': {
           await callHub(url, 'api/disconnect', { method: 'POST' })

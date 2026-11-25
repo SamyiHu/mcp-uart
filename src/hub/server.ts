@@ -10,7 +10,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import type { HubBackend, HubDut, HubFrame } from "./backend.js";
-import type { MessageFilter, SerialConfig } from "../types.js";
+import type { ConnectionInfo, MessageFilter, SerialConfig } from "../types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -95,6 +95,33 @@ type SseClient = {
   pending: string[];
   scheduled: boolean;
 };
+
+/**
+ * Open a port, retrying briefly when the OS still holds the previous handle.
+ *
+ * A close on Windows is asynchronous: opening the same device again right away
+ * can fail with "Access denied" even though the close already returned. Three
+ * short attempts cover that window without hiding a genuinely busy port.
+ */
+async function openWithRetry(
+  backend: HubBackend,
+  config: SerialConfig,
+  attempts = 3
+): Promise<{ connectionId: string; status: string }> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await backend.open(config);
+    } catch (error) {
+      lastError = error;
+      const message = String((error as any)?.message ?? error ?? "");
+      const transient = /access is denied|access denied|resource busy|being used|EACCES|EBUSY|cannot open/i.test(message);
+      if (!transient || attempt === attempts - 1) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 150 * (attempt + 1)));
+    }
+  }
+  throw lastError;
+}
 
 export async function createHub(opts: HubOptions): Promise<HubHandle> {
   const backend = opts.backend;
@@ -526,6 +553,48 @@ export async function createHub(opts: HubOptions): Promise<HubHandle> {
           return;
         }
 
+        // Hand-over: the port is already open (panel or agent) → reuse that
+        // live connection instead of closing and reopening it.
+        //
+        // Windows does not release a COM handle instantly, so a close followed
+        // by an open in the same tick fails with "Access denied". That is what
+        // made the agent give up when the panel already held the port, and why
+        // the only workaround was closing the panel session first.
+        if (activeConnectionId) {
+          let current: ConnectionInfo | null = null;
+          try {
+            current = backend.getInfo(activeConnectionId);
+          } catch {
+            current = null;
+          }
+          if (current !== null && current.config.path === body.path) {
+            const updates: Partial<SerialConfig> = {};
+            if (body.baudRate !== undefined) updates.baudRate = body.baudRate as SerialConfig["baudRate"];
+            if (body.dataBits !== undefined) updates.dataBits = body.dataBits as SerialConfig["dataBits"];
+            if (body.stopBits !== undefined) updates.stopBits = body.stopBits as SerialConfig["stopBits"];
+            if (body.parity !== undefined) updates.parity = body.parity as SerialConfig["parity"];
+            if (body.flowControl !== undefined) updates.flowControl = body.flowControl as SerialConfig["flowControl"];
+            if (body.encoding !== undefined) updates.encoding = body.encoding as SerialConfig["encoding"];
+            if (body.protocol !== undefined) updates.protocol = body.protocol as SerialConfig["protocol"];
+            if (body.delimiter !== undefined) updates.delimiter = body.delimiter;
+            if (body.frameStart !== undefined) updates.frameStart = body.frameStart;
+            if (body.frameEnd !== undefined) updates.frameEnd = body.frameEnd;
+            if (body.dtr !== undefined) updates.dtr = body.dtr;
+            if (body.rts !== undefined) updates.rts = body.rts;
+            if (Object.keys(updates).length > 0) {
+              await backend.reconfigure(activeConnectionId, updates).catch(() => undefined);
+            }
+            attachConnection(activeConnectionId, { ownsPort: true });
+            json(res, 200, {
+              ok: true,
+              connectionId: activeConnectionId,
+              reused: true,
+              info: backend.getInfo(activeConnectionId),
+            });
+            return;
+          }
+        }
+
         // Single-connection policy: close previous first
         if (activeConnectionId) {
           await detachConnection(true).catch(() => undefined);
@@ -551,7 +620,7 @@ export async function createHub(opts: HubOptions): Promise<HubHandle> {
           rts: body.rts ?? true,
         };
 
-        const opened = await backend.open(config);
+        const opened = await openWithRetry(backend, config);
         attachConnection(opened.connectionId, { ownsPort: true });
         const info = backend.getInfo(opened.connectionId);
         json(res, 200, { ok: true, connectionId: opened.connectionId, info });
