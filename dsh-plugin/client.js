@@ -965,6 +965,9 @@ window.__ModuleLoader__.load({
         root.classList.toggle('is-narrow', width < 860)
         root.classList.toggle('is-tight', width < 620)
         root.classList.toggle('is-tiny', width < 430 || (typeof height === 'number' && height < 300))
+        // Short containers (the floating window, a short dock) trade the telemetry
+        // strip for frame rows: at 520px tall the sparkline cost a whole line.
+        root.classList.toggle('is-short', typeof height === 'number' && height < 600)
       }
       function observeSize() {
         applyResponsive(root.clientWidth, root.clientHeight)
@@ -2412,12 +2415,23 @@ window.__ModuleLoader__.load({
       display: flex;
       flex-direction: column;
       gap: 10px;
+      min-height: 0;
       overflow-y: auto;
       overflow-x: hidden;
     }
-    .uart-root.is-narrow .uart-rail { overflow: visible; flex: none; }
-    .uart-root.is-narrow > .uart-body > * { flex: none; }
-    .uart-root.is-narrow .uart-main { flex: none; min-height: 420px; }
+    /* Percentage max-height does not resolve against a flex container whose own
+       height is content-driven, so the rail cap is a fixed 180px in narrow mode:
+       the parameter form scrolls inside itself and the tape keeps the rest.
+       min-height: 0 is required — the base rule pins min-height: max-content, and a
+       min beats a max in CSS, which silently defeated this cap. */
+    .uart-root.is-narrow .uart-rail { overflow: auto; flex: 0 1 auto; max-height: 180px; min-height: 0; }
+    /* Only the rail keeps its natural height. The main column takes the leftover
+       space and scrolls its tape internally — a fixed 420px floor made the send box
+       fall out of the floating window as soon as frames arrived. */
+    .uart-root.is-narrow > .uart-body > .uart-rail { flex: 0 1 auto; }
+    .uart-root.is-narrow .uart-main { flex: 1 1 auto; min-height: 0; }
+    /* Short containers give the telemetry row's height back to the frame tape. */
+    .uart-root.is-short .uart-tape-meta { display: none; }
     .uart-root.is-narrow .uart-port-group { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); align-items: end; }
     .uart-root.is-narrow .uart-port-group > .uart-group-title,
     .uart-root.is-narrow .uart-port-group > .uart-advanced { grid-column: 1 / -1; }
