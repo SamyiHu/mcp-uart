@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-uart",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Serial panel + DSH-native agent tools for DeepSeek Harness: one bundle owns the local Hub, the panel/orb/dock console, and three grouped UART tools (uart_serial / uart_dut / uart_view).",
@@ -9,7 +9,6 @@
     "./client": "./client.js",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg",
-    "./tools/*": "./tools/*",
     "./tools": "./tools/index.js"
   },
   "files": [
