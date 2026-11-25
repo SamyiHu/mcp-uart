@@ -90,17 +90,26 @@ await check('a dead hub surfaces as an error, not a fake success', async () => {
   assert(threw, 'unreachable hub must throw')
 })
 
-await check('bundle patch mounts the panel row and no MCP row', async () => {
+await check('bundle patch mounts the panel row, the tools row, and no MCP row', async () => {
   const text = await readFile(join(root, 'dsh-plugin', 'cordis.patch.yml'), 'utf8')
   assert(!/dsh-mcp-client/.test(text), 'patch must not mount an MCP client row')
   assert(/name: '@local\/dsh-uart'/.test(text), 'patch must mount the panel plugin')
+  assert(/name: '@local\/dsh-uart\/tools'/.test(text), 'patch must mount the tools plugin as its own row')
 })
 
 await check('host half owns the hub child process and the agent switch', async () => {
   const host = await readFile(join(root, 'dsh-plugin', 'index.js'), 'utf8')
   assert(/from '\.\/hub-host\.js'/.test(host), 'index.js must import hub-host')
-  assert(/from '\.\/agent-tools\.js'/.test(host), 'index.js must import agent-tools')
   assert(host.includes('/agent'), 'host must expose the /uart/agent switch route')
+  assert(!/createAgentTools/.test(host), 'tool registration belongs to the tools row, not the panel row')
+})
+
+await check('tools row yields to MCP when both are present', async () => {
+  const source = await readFile(join(root, 'dsh-plugin', 'tools-plugin.js'), 'utf8')
+  assert(source.includes("mcp__uart__"), 'tools row must detect the MCP tool prefix')
+  assert(/unregister\(\)/.test(source), 'tools row must be able to withdraw its tools')
+  assert(source.includes('readHubUrl'), 'tools row must read the published hub address')
+  assert(/state\.mode = 'mcp'/.test(source), 'tools row must record the MCP-wins mode')
 })
 
 await check('hub-host spawns dist/hub.js and drains stderr', async () => {

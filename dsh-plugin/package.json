@@ -7,11 +7,14 @@
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
+    "./tools": "./tools-plugin.js",
+    "./agent-tools": "./agent-tools.js",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg"
   },
   "files": [
     "index.js",
+    "tools-plugin.js",
     "agent-tools.js",
     "hub-host.js",
     "client.js",

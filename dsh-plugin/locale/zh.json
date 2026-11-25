@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "串口面板",
-    "description": "DSH 内置串口调试台：连接串口、实时查看 TX/RX 帧、过滤、发送数据、切换调制解调器信号，与 Agent 的 MCP 串口工具共用同一个串口会话。",
+    "description": "DSH 内置串口调试台：连接串口、实时查看 TX/RX 帧、过滤、发送数据、切换调制解调器信号。插件自带 Hub 与 3 个分组工具（uart_serial / uart_dut / uart_view），与面板共用同一串口会话；如需退回 MCP，装上 MCP 桥接行即可，二者同时开启时只有 MCP 生效。",
     "detail": "docs/DETAIL.md"
   }
 }

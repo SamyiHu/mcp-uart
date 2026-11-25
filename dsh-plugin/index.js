@@ -22,7 +22,6 @@ import http from 'node:http'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { createAgentTools } from './agent-tools.js'
 import { startHub } from './hub-host.js'
 
 const ROUTE_PREFIX = '/uart'
@@ -191,14 +190,22 @@ async function writeAgentPref(enabled) {
   await writeFile(AGENT_PREF_FILE, `${JSON.stringify({ enabled }, null, 2)}\n`, 'utf8')
 }
 
+/** Publish the Hub address for the tools row (and any external consumer). */
+async function publishHubFile(url) {
+  await mkdir(dirname(DEFAULT_HUB_FILE), { recursive: true })
+  await writeFile(
+    DEFAULT_HUB_FILE,
+    `${JSON.stringify({ url, port: Number(new URL(url).port || 0), pid: process.pid, startedAt: new Date().toISOString(), hub: 'dsh-plugin' }, null, 2)}\n`,
+    'utf8',
+  )
+}
+
 export function apply(ctx, config) {
   const state = {
     url: null,
     error: null,
     dispose: null,
     enabled: true,
-    toolDisposers: [],
-    toolCtx: null,
   }
 
   /** Resolves once the Hub is up (or failed); every route awaits it. */
@@ -217,41 +224,19 @@ export function apply(ctx, config) {
         state.url = started.url
         state.dispose = started.dispose
       }
+      // Publish the address so the tools row (a separate plugin) can reach the
+      // same Hub without guessing a shifted port.
+      await publishHubFile(state.url).catch(() => {})
     } catch (error) {
       state.error = error?.message ?? String(error)
     }
   })()
 
   ctx.effect(() => () => {
-    for (const dispose of state.toolDisposers.splice(0)) {
-      try { dispose() } catch { /* tool already gone */ }
-    }
     const stop = state.dispose
     state.dispose = null
     if (typeof stop === 'function') Promise.resolve().then(stop).catch(() => {})
-  }, 'dsh-uart: hub + tools')
-
-  const syncTools = () => {
-    const tools = state.toolCtx?.get?.('tools') ?? ctx.get('tools')
-    if (typeof tools?.register !== 'function') return
-
-    if (!state.enabled) {
-      for (const dispose of state.toolDisposers.splice(0)) {
-        try { dispose() } catch { /* ignore */ }
-      }
-      return
-    }
-    if (state.toolDisposers.length > 0) return
-
-    for (const definition of createAgentTools(() => state.url)) {
-      try {
-        const dispose = tools.register(definition)
-        state.toolDisposers.push(typeof dispose === 'function' ? dispose : () => {})
-      } catch (error) {
-        ctx.logger?.('dsh-uart')?.warn?.(`agent tool ${definition.name} not registered: ${error?.message ?? error}`)
-      }
-    }
-  }
+  }, 'dsh-uart: hub')
 
   ctx.effect(() => {
     let cancelled = false
@@ -259,28 +244,14 @@ export function apply(ctx, config) {
     // user's last choice in the settings page wins.
     if (config?.agentTool === false) {
       state.enabled = false
-      syncTools()
+      writeAgentPref(false).catch(() => {})
       return () => { cancelled = true }
     }
     readAgentPref().then((enabled) => {
-      if (cancelled) return
-      state.enabled = enabled
-      syncTools()
+      if (!cancelled) state.enabled = enabled
     })
     return () => { cancelled = true }
   }, 'dsh-uart: agent pref')
-
-  ctx.inject(['tools'], (toolCtx) => {
-    state.toolCtx = toolCtx
-    toolCtx.effect(() => {
-      syncTools()
-      return () => {
-        for (const dispose of state.toolDisposers.splice(0)) {
-          try { dispose() } catch { /* ignore */ }
-        }
-      }
-    }, 'dsh-uart: agent tools')
-  })
 
   ctx.inject(['webServer'], (hostCtx) => {
     const handler = async (request, response) => {
@@ -322,8 +293,9 @@ export function apply(ctx, config) {
           }
           const enabled = body?.enabled !== false
           state.enabled = enabled
+          // The tools row watches this file, so the switch takes effect without
+          // this plugin registering anything itself.
           await writeAgentPref(enabled).catch(() => {})
-          syncTools()
           json(response, 200, { ok: true, enabled })
           return
         }
@@ -331,16 +303,23 @@ export function apply(ctx, config) {
         return
       }
 
-      // Diagnostics: is each agent tool actually present in the registry?
+      // Diagnostics: which surface currently owns the model's tool list?
       if (pathname === `${ROUTE_PREFIX}/tools`) {
         const tools = ctx.get('tools')
         const names = ['uart_serial', 'uart_dut', 'uart_view']
+        const definitions = typeof tools?.definitions === 'function' ? tools.definitions() : []
+        const mcpTools = definitions.filter((definition) => String(definition?.name ?? '').startsWith('mcp__uart__'))
+        const nativeTools = names.filter((name) => typeof tools?.get === 'function' && Boolean(tools.get(name)))
         json(response, 200, {
           ok: true,
           enabled: state.enabled,
           hubUrl: state.url,
           hubError: state.error,
-          tools: names.map((name) => ({ name, present: typeof tools?.get === 'function' ? Boolean(tools.get(name)) : false })),
+          // Native wins unless MCP is the only surface present; the tools row
+          // yields whenever MCP tools exist, so this line mirrors its decision.
+          mode: mcpTools.length > 0 ? 'mcp' : nativeTools.length > 0 ? 'native' : 'off',
+          tools: names.map((name) => ({ name, present: nativeTools.includes(name) })),
+          mcpTools: mcpTools.map((definition) => definition.name),
         })
         return
       }

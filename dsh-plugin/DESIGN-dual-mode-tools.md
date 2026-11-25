@@ -117,16 +117,29 @@ Host 插件 import 的纯函数，工具注册层只做 schema ↔ 参数适配�
 
 收益：工具数 28 → 3，token 约 4100 → 约 900；选择干扰大幅下降。
 
-## 6. 开关行为
+## 6. 开关行为与互斥
 
-- 设置页一行 `Agent 工具`（默认**开**，比照 visio 的 `agentTool: true`）：
-  - 开 → `ctx.tools.register()` 注册上述 3 个工具
-  - 关 → 调 disposer 卸载；面板照常用
-- 持久化：`~/.dsh` 下的偏好文件（与 visio 一致），或复用现有 UI 的
-  localStorage（需 Host/Client 两端可达，故优先 Host 端偏好文件 +
-  `/uart/agent` 路由，与 visio 同构）。
-- patch 里可加 `config.agentTool: false` 作为**默认值兜底**（不安装时不影响）。
-- 切换**立即生效，无需重启**（register/dispose 是运行时的）。
+插件页现在是三行、三个开关：
+
+| 行 | 开关 | 作用 |
+|---|---|---|
+| `local-uart` | 面板 | 侧边栏 / 悬浮球 / 底栏 + 启动 Hub |
+| `local-uart-tools` | 工具 | 3 个分组专用工具（默认开） |
+| `mcp-uart`（可选 bundle） | MCP | 28 个 MCP 工具，作为兜底 |
+
+**互斥规则（已实现）**：工具行每 2.5 秒检查注册表里有没有 `mcp__uart__*`。
+
+- 有 → 工具行主动 `unregister()` 自己的 3 个工具，记 `mode: 'mcp'`
+- 没有 → 工具行重新注册，记 `mode: 'native'`
+- 于是两个都开时只有 MCP 生效；关掉 MCP 行后专用工具自动接管，无需重启插件
+
+`/uart/tools` 会报告当前生效面：`mode: native | mcp | off`，附带两边工具清单，
+用于回答"为什么模型看到的是这一组而不是那一组"。
+
+### 设置页开关
+
+- `Agent 工具`（默认开）：写 `~/.mcp-uart/agent.json`，工具行轮询该文件生效
+- `底栏状态条` / `自动滚到最新` / `数据解码`：纯 UI 偏好
 
 ## 7. 迁移步骤
 
@@ -166,9 +179,21 @@ Host 插件 import 的纯函数，工具注册层只做 schema ↔ 参数适配�
 ## 9. 明确不做
 
 - 不改 `uart-ui.js`（面板 UI 与工具解耦）。
-- 不削弱外部 MCP 的工具集（外部用户要完整能力）。
 - 不在这一版做 Hub 共享 / 跨进程串口代理。
 - 不动 Rust daemon（那是另一条性能线）。
+
+## 9.1 未完成：MCP 侧也做分组 + 渐进披露
+
+用户要求 MCP 也按"工具 + 参数分组、渐进披露"暴露。当前 MCP 服务器仍是 28 个
+独立工具（`src/server.ts`，53 KB，zod schema 逐个声明）。
+
+计划：给 `src/server.ts` 加一个 `UART_MCP_GROUPED=1` 开关，注册
+`uart_serial` / `uart_dut` / `uart_view` 三个分组工具（action 枚举 + 合并参数，
+与专用工具同形），handler 内部仍调用现有的 28 个实现，默认保持 28 个以兼容
+外部客户端。DSH 的 MCP 桥接行可以设置该环境变量，使兜底路径也得到紧凑表面。
+
+未做的原因：这是一次对外接口的结构性改动，需要同步改 `test/*.mjs` 里按名调用
+工具的用例；先确认是否要动外部契约，再动手。
 
 ## 10. 当前状态
 
