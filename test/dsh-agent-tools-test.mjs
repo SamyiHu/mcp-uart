@@ -90,6 +90,24 @@ await check('a dead hub surfaces as an error, not a fake success', async () => {
   assert(threw, 'unreachable hub must throw')
 })
 
+await check('the hub address may be a plain string, not only an accessor', async () => {
+  // Regression: passing a string used to make every tool call fail with
+  // "hubUrl is not a function" while registration looked healthy.
+  const { createServer } = await import('node:http')
+  const server = createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ ok: true, seq: 0, frames: [] }))
+  })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const url = `http://127.0.0.1:${server.address().port}`
+
+  const stringTools = createAgentTools(url)
+  const result = await stringTools.find((t) => t.name === 'uart_view').execute({ action: 'frames', limit: 5 })
+  assert(result?.text === 'No frames buffered.', `string hub address must work (got ${JSON.stringify(result)})`)
+
+  await new Promise((resolve) => server.close(resolve))
+})
+
 await check('bundle patch mounts the panel row, the tools row, and no MCP row', async () => {
   const panel = await readFile(join(root, 'dsh-plugin', 'cordis.patch.yml'), 'utf8')
   const toolsPatch = await readFile(join(root, 'dsh-plugin-tools', 'cordis.patch.yml'), 'utf8')

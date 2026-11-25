@@ -124,9 +124,14 @@ function frameLine(frame) {
 /**
  * Build the three tool definitions.
  *
- * @param {() => string | null} hubUrl  current Hub URL (null when not running)
+ * @param {(() => string | null) | string} hubUrl  Hub address, or an accessor
+ *   returning the current one (preferred: the address can change when the Hub
+ *   restarts on another port).
  */
 export function createAgentTools(hubUrl) {
+  // Accept a plain string too: passing one instead of an accessor is an easy
+  // mistake, and it must not turn every tool call into "hubUrl is not a function".
+  const currentUrl = typeof hubUrl === 'function' ? hubUrl : () => hubUrl
   const serial = {
     name: 'uart_serial',
     description:
@@ -138,7 +143,7 @@ export function createAgentTools(hubUrl) {
       render: (_args, value) => [{ type: 'text', text: String(value?.text ?? '') }],
     },
     async execute(args = {}) {
-      const url = hubUrl()
+      const url = currentUrl()
       switch (args.action) {
         case 'list_ports': {
           const data = await callHub(url, 'api/ports')
@@ -224,7 +229,7 @@ export function createAgentTools(hubUrl) {
       render: (_args, value) => [{ type: 'text', text: String(value?.text ?? '') }],
     },
     async execute(args = {}) {
-      const url = hubUrl()
+      const url = currentUrl()
       switch (args.action) {
         case 'list': {
           const data = await callHub(url, 'api/dut')
@@ -294,7 +299,7 @@ export function createAgentTools(hubUrl) {
       render: (_args, value) => [{ type: 'text', text: String(value?.text ?? '') }],
     },
     async execute(args = {}) {
-      const url = hubUrl()
+      const url = currentUrl()
       switch (args.action) {
         case 'panel': {
           const data = await callHub(url, 'api/status')

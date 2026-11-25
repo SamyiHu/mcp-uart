@@ -49,6 +49,8 @@ export function apply(ctx, config) {
     tools: null,
     /** null until measured; then 'native' | 'mcp' | 'off' */
     mode: null,
+    /** Hub address the tools call; refreshed from hub.json on every sync. */
+    hubUrl: null,
   }
 
   const registeredCount = () => state.disposers.length
@@ -70,9 +72,11 @@ export function apply(ctx, config) {
     }
   }
 
-  const register = (hubUrl) => {
+  const register = () => {
     if (state.disposers.length > 0) return
-    for (const definition of createAgentTools(hubUrl)) {
+    // Pass an accessor, not a snapshot: the Hub may restart on another port and
+    // the tools must follow it without being re-registered.
+    for (const definition of createAgentTools(() => state.hubUrl)) {
       try {
         const dispose = state.tools.register(definition)
         state.disposers.push(typeof dispose === 'function' ? dispose : () => {})
@@ -109,8 +113,9 @@ export function apply(ctx, config) {
       }
       return
     }
+    state.hubUrl = await readHubUrl(fallbackUrl)
     if (state.mode !== 'native') {
-      register(await readHubUrl(fallbackUrl))
+      register()
       state.mode = 'native'
     }
   }
