@@ -40,7 +40,8 @@ dsh-plugin/
 ```
 
 External (non-DSH) users keep the standard MCP surface: `node dist/index.js` is
-still a full MCP server with all 28 tools, unaffected by this bundle.
+still a full MCP server, with the same three grouped tools
+(`uart_serial` / `uart_dut` / `uart_view`), unaffected by this bundle.
 See `dsh-plugin/DESIGN-dual-mode-tools.md` for the design and its verification.
 
 The console UI itself lives in **one** file, `src/hub/public/uart-ui.js` (framework-free

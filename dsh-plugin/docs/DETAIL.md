@@ -60,8 +60,9 @@ dsh-uart 插件 (Host)
 
 ## 外部（非 DSH）用法
 
-同一套后端也是标准 MCP 服务器，给 Cursor、Claude Code 等客户端用，28 个工具
-全量。这是独立进程，与本插件无关：
+同一套后端也是标准 MCP 服务器，给 Cursor、Claude Code 等客户端用。工具面同样是
+**三个分组工具**（`uart_serial` / `uart_dut` / `uart_view`，共 27 个 action），
+与 DSH 内的专用工具同形。这是独立进程，与本插件无关：
 
 ```bash
 node dist/index.js        # MCP server，Hub 随进程启动，stderr 打印 URL

@@ -182,18 +182,23 @@ Host 插件 import 的纯函数，工具注册层只做 schema ↔ 参数适配�
 - 不在这一版做 Hub 共享 / 跨进程串口代理。
 - 不动 Rust daemon（那是另一条性能线）。
 
-## 9.1 未完成：MCP 侧也做分组 + 渐进披露
+## 9.1 MCP 侧也已分组（2026-11-25 完成）
 
-用户要求 MCP 也按"工具 + 参数分组、渐进披露"暴露。当前 MCP 服务器仍是 28 个
-独立工具（`src/server.ts`，53 KB，zod schema 逐个声明）。
+原计划保留 28 个工具加 `UART_MCP_GROUPED` 开关；确认 MCP 尚未外发后，直接改成
+默认分组，不再保留兼容层。
 
-计划：给 `src/server.ts` 加一个 `UART_MCP_GROUPED=1` 开关，注册
-`uart_serial` / `uart_dut` / `uart_view` 三个分组工具（action 枚举 + 合并参数，
-与专用工具同形），handler 内部仍调用现有的 28 个实现，默认保持 28 个以兼容
-外部客户端。DSH 的 MCP 桥接行可以设置该环境变量，使兜底路径也得到紧凑表面。
+实现方式（`src/server.ts`）：
 
-未做的原因：这是一次对外接口的结构性改动，需要同步改 `test/*.mjs` 里按名调用
-工具的用例；先确认是否要动外部契约，再动手。
+- 27 个逐操作的工具声明原样保留，但注册目标换成一个捕获器（`api.registerTool`），
+  实现代码一行未改；
+- 新增 `registerGroupedTools()` 注册三个对外工具，`action` 枚举分派到捕获的实现；
+- 参数表由各成员工具的 inputSchema 合并生成，**合并时全部置为 optional**
+  （`path` 对 `open` 必需、对 `list_ports` 无意义），选中 action 后再用该工具
+  自己的 schema 重新校验，默认值规则因此完全保留。
+
+实测：`tools/list` 返回 3 个工具（`uart_serial` 15 actions、`uart_dut` 10、
+`uart_view` 2）；`uart_serial{action:"list_ports"}` 与
+`uart_dut{action:"list_profiles"}` 均正常返回。
 
 ## 10. 当前状态
 

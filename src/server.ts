@@ -18,7 +18,7 @@ import { ok, fail } from "./respond.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const IS_WIN = process.platform === "win32";
-const SERVER_VERSION = "1.2.0";
+const SERVER_VERSION = "1.5.0";
 
 const hexNum = z
   .number()
@@ -59,11 +59,132 @@ export type ServerHooks = {
   onConnectionClose?: (connectionId: string) => void;
 };
 
+/**
+ * The model-facing surface: three grouped tools instead of one per operation.
+ *
+ * Each entry lists the `action` values it accepts; the corresponding raw tool
+ * name is built from the group's prefix. Parameters from every member tool are
+ * merged into one input schema (first declaration wins), and the dispatcher
+ * re-validates the chosen action against that tool's own schema, so defaults
+ * still apply exactly as before.
+ */
+const TOOL_GROUPS = {
+  uart_serial: {
+    prefix: "serial_",
+    title: "Serial port",
+    description:
+      "Serial port control: list ports, open/close, send and read data, wait for a frame, modem signals, "
+      + "live encoding/framing changes and ported monitors. Select the operation with `action`.",
+    actions: [
+      "list_ports",
+      "open",
+      "write",
+      "read",
+      "extract",
+      "wait",
+      "wait_frame",
+      "start_monitor",
+      "stop_monitor",
+      "status",
+      "reconfigure",
+      "close",
+      "list_encodings",
+      "list_protocols",
+      "set_signals",
+    ],
+  },
+  uart_dut: {
+    prefix: "dut_",
+    title: "DUT test profiles",
+    description:
+      "Profile-driven DUT testing over the serial port: list profiles, connect, run a command or the whole "
+      + "smoke sequence, send raw bytes, and read the session status. Select the operation with `action`.",
+    actions: [
+      "list_profiles",
+      "connect",
+      "disconnect",
+      "test",
+      "sequence",
+      "extract",
+      "cmd",
+      "smoke",
+      "status",
+      "send_raw",
+    ],
+  },
+  uart_view: {
+    prefix: "serial_",
+    title: "Serial visualisations",
+    description:
+      "Render captured traffic: a frame timeline as HTML, or a smoke-run report as HTML. "
+      + "Select the operation with `action`.",
+    actions: ["visualize", "visualize_smoke"],
+  },
+} as const;
+
+type RawTool = { definition: any; handler: any };
+
+/** Register the three grouped tools, dispatching to the captured raw tools. */
+function registerGroupedTools(server: McpServer, rawTools: Map<string, RawTool>): void {
+  for (const [groupName, group] of Object.entries(TOOL_GROUPS)) {
+    const actions = group.actions as readonly string[];
+    const shape: Record<string, any> = {
+      action: z.enum(actions as unknown as [string, ...string[]]).describe("Operation to run."),
+    };
+    for (const action of actions) {
+      const input = rawTools.get(`${group.prefix}${action}`)?.definition?.inputSchema ?? {};
+      for (const [key, value] of Object.entries(input)) {
+        if (key in shape) continue;
+        // Every merged field must be optional at the group level: `path` is
+        // required by `open` but meaningless for `list_ports`. The chosen
+        // action is re-validated against its own schema below, which restores
+        // the real required/default rules.
+        shape[key] = typeof (value as any)?.optional === "function" ? (value as any).optional() : value;
+      }
+    }
+
+    server.registerTool(
+      groupName,
+      {
+        title: group.title,
+        description: `${group.description} Actions: ${actions.join(", ")}.`,
+        inputSchema: shape,
+      },
+      async (args: any, extra: any) => {
+        const { action, ...rest } = args ?? {};
+        const target = rawTools.get(`${group.prefix}${action}`);
+        if (!target) return fail(`Unknown action for ${groupName}: ${String(action)}`);
+        const input = target.definition?.inputSchema;
+        if (!input) return target.handler(rest, extra);
+        const parsed = z.object(input).safeParse(rest);
+        if (!parsed.success) {
+          return fail(`Invalid arguments for ${groupName}.${action}: ${parsed.error.message}`);
+        }
+        return target.handler(parsed.data, extra);
+      }
+    );
+  }
+}
+
 export function createServer(hooks: ServerHooks = {}): McpServer {
   const server = new McpServer({
     name: "mcp-uart",
     version: SERVER_VERSION,
   });
+
+  // Tools are declared one per operation and captured here instead of being
+  // registered directly: the model-facing surface is three grouped tools
+  // (`uart_serial` / `uart_dut` / `uart_view`) that dispatch by `action`.
+  // Keeping the per-operation declarations intact means the grouping layer is
+  // a pure adapter — the implementations never change.
+  const rawTools = new Map<string, { definition: any; handler: any }>();
+  const api = {
+    // Explicit parameter types matter: with `handler: any` the callbacks below
+    // would lose contextual typing and `params` becomes an implicit any.
+    registerTool(name: string, definition: any, handler: (params: any, extra: any) => any) {
+      rawTools.set(name, { definition, handler });
+    },
+  };
 
   const manager = hooks.manager ?? new SerialManager();
   const monitorProcesses = new Map<string, ReturnType<typeof spawn>>();
@@ -133,7 +254,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
   // Generic serial tools
   // ──────────────────────────────────────────────
 
-  server.registerTool(
+  api.registerTool(
     "serial_list_ports",
     {
       title: "List serial ports",
@@ -172,7 +293,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  server.registerTool(
+  api.registerTool(
     "serial_open",
     {
       title: "Open serial port",
@@ -308,7 +429,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  server.registerTool(
+  api.registerTool(
     "serial_write",
     {
       title: "Write serial",
@@ -335,7 +456,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  server.registerTool(
+  api.registerTool(
     "serial_read",
     {
       title: "Read serial",
@@ -430,7 +551,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  server.registerTool(
+  api.registerTool(
     "serial_extract",
     {
       title: "Extract field",
@@ -484,7 +605,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  server.registerTool(
+  api.registerTool(
     "serial_wait",
     {
       title: "Wait full response",
@@ -549,7 +670,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  server.registerTool(
+  api.registerTool(
     "serial_wait_frame",
     {
       title: "Wait one frame",
@@ -594,7 +715,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  server.registerTool(
+  api.registerTool(
     "serial_start_monitor",
     {
       title: "Start serial file monitor",
@@ -621,7 +742,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  server.registerTool(
+  api.registerTool(
     "serial_stop_monitor",
     {
       title: "Stop serial file monitor",
@@ -650,7 +771,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  server.registerTool(
+  api.registerTool(
     "serial_status",
     {
       title: "Serial status",
@@ -686,7 +807,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  server.registerTool(
+  api.registerTool(
     "serial_reconfigure",
     {
       title: "Reconfigure serial",
@@ -725,7 +846,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  server.registerTool(
+  api.registerTool(
     "serial_close",
     {
       title: "Close serial",
@@ -770,7 +891,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  server.registerTool(
+  api.registerTool(
     "serial_list_encodings",
     {
       title: "List encodings",
@@ -788,7 +909,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  server.registerTool(
+  api.registerTool(
     "serial_list_protocols",
     {
       title: "List protocols",
@@ -806,7 +927,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  server.registerTool(
+  api.registerTool(
     "serial_set_signals",
     {
       title: "Set modem signals",
@@ -833,7 +954,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  server.registerTool(
+  api.registerTool(
     "serial_visualize",
     {
       title: "Visualize serial timeline",
@@ -886,7 +1007,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  server.registerTool(
+  api.registerTool(
     "serial_visualize_smoke",
     {
       title: "Visualize DUT smoke report",
@@ -956,7 +1077,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
   // DUT profile-driven test tools
   // ──────────────────────────────────────────────
 
-  server.registerTool(
+  api.registerTool(
     "dut_list_profiles",
     {
       title: "List DUT profiles",
@@ -1010,7 +1131,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  server.registerTool(
+  api.registerTool(
     "dut_connect",
     {
       title: "Connect DUT",
@@ -1085,7 +1206,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  server.registerTool(
+  api.registerTool(
     "dut_disconnect",
     {
       title: "Disconnect DUT",
@@ -1111,7 +1232,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  server.registerTool(
+  api.registerTool(
     "dut_test",
     {
       title: "Run DUT test",
@@ -1274,7 +1395,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     return [cmd, p1, p2, ck].map((b) => (b & 0xff).toString(16).padStart(2, "0").toUpperCase()).join("");
   }
 
-  server.registerTool(
+  api.registerTool(
     "dut_sequence",
     {
       title: "Run DUT sequence",
@@ -1316,7 +1437,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  server.registerTool(
+  api.registerTool(
     "dut_extract",
     {
       title: "Extract DUT field",
@@ -1360,7 +1481,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  server.registerTool(
+  api.registerTool(
     "dut_cmd",
     {
       title: "Raw DUT command",
@@ -1423,7 +1544,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  server.registerTool(
+  api.registerTool(
     "dut_smoke",
     {
       title: "DUT smoke test",
@@ -1492,7 +1613,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  server.registerTool(
+  api.registerTool(
     "dut_status",
     {
       title: "DUT status",
@@ -1546,7 +1667,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  server.registerTool(
+  api.registerTool(
     "dut_send_raw",
     {
       title: "DUT send raw",
@@ -1570,6 +1691,8 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
       }
     }
   );
+
+  registerGroupedTools(server, rawTools);
 
   return server;
 }
