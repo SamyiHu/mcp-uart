@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "UART panel",
-    "description": "Serial console inside DSH: connect a port, watch TX/RX frames live, filter them, send data and toggle modem signals. The bundle ships its own Hub and three grouped tools (uart_serial / uart_dut / uart_view) over the same serial session; install the MCP bridge row to fall back, and when both are enabled only the MCP one takes effect.",
+    "description": "Serial console inside DSH: connect a port, watch TX/RX frames live, filter them, send data and toggle modem signals, and start a local Hub in the background. Agent-side tools come from the companion Serial tools bundle; install the MCP bridge row to fall back, and when both are enabled only the MCP one takes effect.",
     "detail": "docs/DETAIL.md"
   }
 }

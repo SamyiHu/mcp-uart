@@ -1,10 +1,7 @@
-# UART 串口：面板 + 工具 + 可选 MCP，三个开关互相约束
+# 串口面板：DSH 面板 + 本地 Hub
 #
-# 行 1 local-uart      面板：侧边栏 / 悬浮球 / 底栏状态条，并启动本地 Hub
-# 行 2 local-uart-tools 工具：3 个分组工具（uart_serial / uart_dut / uart_view）
-#
-# 互斥规则：工具行发现注册表里已有 mcp__uart__* 时不注册自己，把位置让给 MCP
-# （MCP 是显式启用的兜底）；MCP 关掉后它会自动接管回来。两个都开时只有一个生效。
+# 行 1 local-uart 面板：侧边栏 / 悬浮球 / 底栏状态条，并启动本地 Hub。
+# 列工具见配套 bundle `@local/dsh-uart-tools`（独立成包，插件页才有自己的名字）。
 #
 # 外部（非 DSH）用户仍用 `node dist/index.js`，那是独立进程，与本 bundle 无关。
 - insert:
@@ -13,8 +10,3 @@
       config:
         # Agent 工具默认开；设置页开关会持久化到 ~/.mcp-uart/agent.json
         agentTool: true
-- insert:
-    - id: local-uart-tools
-      name: '@local/dsh-uart/tools'
-      config:
-        enabled: true

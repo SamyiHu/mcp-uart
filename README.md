@@ -17,31 +17,40 @@ Serial Port MCP Server for AI agents. Lets Claude, Cline, Cursor, and other MCP-
 
 > `serial_open` / `dut_connect` default `autoMonitor=false` (no terminal popup). Set `autoMonitor=true` for human debugging.
 
-## DeepSeek Harness (DSH) plugin
+## DeepSeek Harness (DSH) plugins
 
-`dsh-plugin/` packages the serial stack as a DSH bundle with a native panel
-(sidebar → **串口**): port picker, live TX/RX tape with filters, send box, DTR/RTS
-and Break.
+Two bundles, each with its own switch on the plugin page:
 
-The bundle is self-contained: it starts its own Hub (`dist/hub.js` child process,
-which it stops on unload) and registers **three grouped agent tools** —
-`uart_serial`, `uart_dut`, `uart_view` — instead of mounting the MCP server. DSH
-sessions therefore see no `mcp__uart__*` tools; the settings page has an
-**Agent 工具** switch that registers or unregisters them at runtime.
+| Bundle | Provides |
+|---|---|
+| `dsh-plugin/` → `@local/dsh-uart` | Panel (sidebar → **串口**): port picker, live TX/RX tape, filters, send box, DTR/RTS/Break, plus the local Hub it starts as a child process |
+| `dsh-plugin-tools/` → `@local/dsh-uart-tools` | Three grouped agent tools — `uart_serial`, `uart_dut`, `uart_view` |
+
+The panel bundle owns the Hub (`dist/hub.js` child process, stopped on unload) and
+proxies `/uart/*` to it. The tools bundle talks to that Hub over HTTP, so both
+surfaces drive the same serial session. The settings page's **Agent 工具** switch
+writes `~/.mcp-uart/agent.json`, which the tools bundle watches.
+
+Mutual exclusion: while an MCP bridge row is active (`mcp__uart__*` present in the
+registry) the tools bundle withdraws its three tools, so enabling both never
+duplicates the model's tool list.
 
 ```
-dsh-plugin/
-  index.js         Host half: starts the Hub, proxies /uart/*, /uart/agent switch, /uart/tools diagnosis
-  hub-host.js      Hub child process: spawn dist/hub.js, parse HUB_URL=, stop on dispose
-  agent-tools.js   The three grouped tools, dispatching to the Hub HTTP API
-  client.js        Carrier: sidebar panel + float orb + dock strip + settings page
-  cordis.patch.yml Panel row only — no MCP client row
-  locale/, icon.svg, docs/DETAIL.md, DESIGN-*.md
+dsh-plugin/            panel bundle
+  index.js             starts the Hub, proxies /uart/*, /uart/agent switch, /uart/tools diagnosis
+  hub-host.js          Hub child process: spawn dist/hub.js, parse HUB_URL=, stop on dispose
+  client.js            sidebar panel + float orb + dock strip + settings page
+  cordis.patch.yml     panel row only
+
+dsh-plugin-tools/      tools bundle
+  index.js             register/withdraw the three tools, watches the preference file
+  agent-tools.js       the three grouped tools, dispatching to the Hub HTTP API
+  cordis.patch.yml     tools row only
 ```
 
 External (non-DSH) users keep the standard MCP surface: `node dist/index.js` is
 still a full MCP server, with the same three grouped tools
-(`uart_serial` / `uart_dut` / `uart_view`), unaffected by this bundle.
+(`uart_serial` / `uart_dut` / `uart_view`), unaffected by these bundles.
 See `dsh-plugin/DESIGN-dual-mode-tools.md` for the design and its verification.
 
 The console UI itself lives in **one** file, `src/hub/public/uart-ui.js` (framework-free
