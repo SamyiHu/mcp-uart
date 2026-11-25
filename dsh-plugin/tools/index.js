@@ -43,6 +43,9 @@ async function readHubUrl(fallback) {
   return fallback
 }
 
+/** Display name for the plugin inventory row. */
+export const name = 'uart-tools'
+
 export function apply(ctx, config) {
   const state = {
     disposers: [],

@@ -1,12 +1,11 @@
-# 串口面板：DSH 面板 + 本地 Hub
+# 串口面板：DSH 面板 + 本地 Hub + Agent 工具
 #
-# 行 1 local-uart 面板：侧边栏 / 悬浮球 / 底栏状态条，并启动本地 Hub。
-# 列工具见配套 bundle `@local/dsh-uart-tools`（独立成包，插件页才有自己的名字）。
+# 单行：工具作为面板插件的子模块一起加载（DSH 对 bundle 内的相对行没有显示标题，
+# 拆行只会显示成文件 URL）。Agent 工具可在 设置 -> 串口控制台 里开关。
 #
-# 外部（非 DSH）用户仍用 `node dist/index.js`，那是独立进程，与本 bundle 无关。
+# 外部（非 DSH）用户仍用 node dist/index.js，那是独立进程，与本 bundle 无关。
 - insert:
     - id: local-uart
       name: '@local/dsh-uart'
       config:
-        # Agent 工具默认开；设置页开关会持久化到 ~/.mcp-uart/agent.json
         agentTool: true

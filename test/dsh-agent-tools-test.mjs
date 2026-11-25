@@ -9,7 +9,7 @@ import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { createAgentTools } from '../dsh-plugin-tools/agent-tools.js'
+import { createAgentTools } from '../dsh-plugin/tools/agent-tools.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 let failures = 0
@@ -108,12 +108,15 @@ await check('the hub address may be a plain string, not only an accessor', async
   await new Promise((resolve) => server.close(resolve))
 })
 
-await check('bundle patch mounts the panel row, the tools row, and no MCP row', async () => {
-  const panel = await readFile(join(root, 'dsh-plugin', 'cordis.patch.yml'), 'utf8')
-  const toolsPatch = await readFile(join(root, 'dsh-plugin-tools', 'cordis.patch.yml'), 'utf8')
-  assert(!/dsh-mcp-client/.test(panel) && !/dsh-mcp-client/.test(toolsPatch), 'patch must not mount an MCP client row')
-  assert(/name: '@local\/dsh-uart'/.test(panel), 'panel bundle must mount the panel plugin')
-  assert(/name: '@local\/dsh-uart-tools'/.test(toolsPatch), 'tools bundle must mount the tools plugin as its own row')
+await check('bundle mounts one row, embeds the tools, and has no MCP row', async () => {
+  const patch = await readFile(join(root, 'dsh-plugin', 'cordis.patch.yml'), 'utf8')
+  const host = await readFile(join(root, 'dsh-plugin', 'index.js'), 'utf8')
+  assert(!/dsh-mcp-client/.test(patch), 'patch must not mount an MCP client row')
+  assert(/name: '@local\/dsh-uart'/.test(patch), 'bundle must mount the panel plugin')
+  // A second row inside the same bundle has no display title in the plugin page
+  // (it renders as a file URL), so the tools are mounted as a child instead.
+  assert(!/id: local-uart-tools/.test(patch), 'tools must not be a second row')
+  assert(/from '\.\/tools\/index\.js'/.test(host), 'panel plugin must mount the tools child')
 })
 
 await check('host half owns the hub child process and the agent switch', async () => {
@@ -124,7 +127,7 @@ await check('host half owns the hub child process and the agent switch', async (
 })
 
 await check('tools row yields to MCP when both are present', async () => {
-  const source = await readFile(join(root, 'dsh-plugin-tools', 'index.js'), 'utf8')
+  const source = await readFile(join(root, 'dsh-plugin', 'tools', 'index.js'), 'utf8')
   assert(source.includes("mcp__uart__"), 'tools row must detect the MCP tool prefix')
   assert(/unregister\(\)/.test(source), 'tools row must be able to withdraw its tools')
   assert(source.includes('readHubUrl'), 'tools row must read the published hub address')
