@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Serial tools",
-    "description": "Serial tools for the Agent: three grouped tools (uart_serial / uart_dut / uart_view) that drive the same serial session through the Hub started by the Serial panel bundle. Mutually exclusive with the MCP serial tools — this plugin steps aside while an MCP bridge row is active."
+    "description": "Serial tools for the Agent: uart_serial (connect and transfer), uart_dut (profiles and smoke runs), uart_view (frames and history), all driving the same serial session through the Hub started by the panel."
   }
 }
