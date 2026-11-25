@@ -65,6 +65,9 @@ window.__ModuleLoader__.load({
         showAscii: true,
         showHex: true,
         follow: true,
+        /** Mirror whatever connection the Hub is running, whoever opened it (the
+         *  Agent included). Cleared when the operator explicitly stops monitoring. */
+        autoAttach: true,
         railWidth: 248,
         asciiWidth: 210,
         sendText: '',
@@ -1573,7 +1576,10 @@ window.__ModuleLoader__.load({
       }
 
       async function attachIfNeeded(force = false) {
-        if (state.connected && !force) return
+        // Follow the Hub's active connection unless the operator deliberately
+        // detached: when the Agent opens a port (or switches ports), the panel
+        // starts showing that session within one poll instead of staying blank.
+        if (!state.autoAttach && !force) return
         try {
           const health = await readJson('api/health')
           state.hub = 'up'
@@ -1591,6 +1597,8 @@ window.__ModuleLoader__.load({
       async function connect() {
         const path = String(state.port ?? '').trim()
         if (path.length === 0) return
+        // A manual connect re-arms following: the panel mirrors the Hub again.
+        state.autoAttach = true
         state.busy = true
         sync()
         notify(null)
@@ -1615,6 +1623,7 @@ window.__ModuleLoader__.load({
       }
 
       async function stopMonitoring() {
+        state.autoAttach = false
         try {
           await postJson('api/detach', {})
           notify({ tone: 'info', text: t('detached') })

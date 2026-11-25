@@ -1,7 +1,8 @@
-# 串口面板：DSH 面板 + 本地 Hub + Agent 工具
+# 串口面板 + 串口工具（同一 bundle 的两行，对应 billion-context 那种子路径写法）
 #
-# 单行：工具作为面板插件的子模块一起加载（DSH 对 bundle 内的相对行没有显示标题，
-# 拆行只会显示成文件 URL）。Agent 工具可在 设置 -> 串口控制台 里开关。
+# 行 1 local-uart       name 指向包本身：面板 + 本地 Hub
+# 行 2 local-uart-tools name 指向包的 ./tools 子路径：三个分组工具
+#                       行标题由 DSH 用「包名/子路径」生成，无法本地化
 #
 # 外部（非 DSH）用户仍用 node dist/index.js，那是独立进程，与本 bundle 无关。
 - insert:
@@ -9,3 +10,8 @@
       name: '@local/dsh-uart'
       config:
         agentTool: true
+- insert:
+    - id: local-uart-tools
+      name: '@local/dsh-uart/tools'
+      config:
+        enabled: true

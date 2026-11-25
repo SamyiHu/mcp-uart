@@ -26,7 +26,6 @@ import { startHub } from './hub-host.js'
 // The agent tools live in ./tools and are mounted as a child of this plugin:
 // DSH has no display title for a second row inside one bundle, so a separate
 // row would render as a raw file URL in the plugin page.
-import { apply as applyAgentTools } from './tools/index.js'
 
 const ROUTE_PREFIX = '/uart'
 const DEFAULT_HUB_FILE = join(homedir(), '.mcp-uart', 'hub.json')
@@ -257,13 +256,9 @@ export function apply(ctx, config) {
     return () => { cancelled = true }
   }, 'dsh-uart: agent pref')
 
-  // Mount the tool layer inside this plugin's own context so it shares the
-  // lifetime and needs no separate row.
-  try {
-    applyAgentTools(ctx, { enabled: config?.agentTool !== false })
-  } catch (error) {
-    ctx.logger?.('dsh-uart')?.warn?.(`agent tools not mounted: ${error?.message ?? error}`)
-  }
+  // The tool layer is its own row (`@local/dsh-uart/tools`) so the plugin page
+  // can switch it independently; it is not mounted here, or the tools would
+  // register twice.
 
   ctx.inject(['webServer'], (hostCtx) => {
     const handler = async (request, response) => {

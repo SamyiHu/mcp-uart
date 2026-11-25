@@ -115,8 +115,8 @@ await check('bundle mounts one row, embeds the tools, and has no MCP row', async
   assert(/name: '@local\/dsh-uart'/.test(patch), 'bundle must mount the panel plugin')
   // A second row inside the same bundle has no display title in the plugin page
   // (it renders as a file URL), so the tools are mounted as a child instead.
-  assert(!/id: local-uart-tools/.test(patch), 'tools must not be a second row')
-  assert(/from '\.\/tools\/index\.js'/.test(host), 'panel plugin must mount the tools child')
+  assert(/name: '@local\/dsh-uart\/tools'/.test(patch), 'tools must be its own subpath row')
+  assert(!/applyAgentTools/.test(host), 'panel plugin must not mount the tools itself (they are a separate row)')
 })
 
 await check('host half owns the hub child process and the agent switch', async () => {
