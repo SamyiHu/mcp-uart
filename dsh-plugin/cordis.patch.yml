@@ -1,24 +1,15 @@
-# UART 串口工具：MCP 服务器 + 串口面板，一个 bundle 同时管两端
+# UART 串口：DSH 专用工具 + 面板（不含 MCP 行）
 #
-# 1) MCP 行：把串口工具（serial_open / serial_read / dut_* / …）注入给 Agent。
-#    命令指向本仓库的 Node MCP 服务器；Rust 版 uartd 就绪后改 command 即可。
-# 2) 面板行：侧边栏「串口」+ 串口控制台 + 悬浮球 + 底部状态条。
+# 本 bundle 不再挂 MCP client 行。DSH 里的串口能力由两部分组成：
+#   1) index.js 启动本地 Hub（dist/hub.js 子进程），并注册 3 个分组工具
+#      uart_serial / uart_dut / uart_view（设置页可开关）
+#   2) client.js 渲染侧边栏面板 / 悬浮球 / 底栏状态条
 #
-# 两条同进同出：只装面板不会让 Agent 拿不到工具，反之亦然。
-- insert:
-    - id: mcp-uart
-      name: '@deepseek-ai/dsh-mcp-client'
-      config:
-        serverName: uart
-        transport: stdio
-        command: node
-        args:
-          - 'E:\Desktop_Projects\小程序\MCP_Uart\dist\index.js'
-        cwd: 'E:\Desktop_Projects\小程序\MCP_Uart'
-        env:
-          # Keep the in-process Hub on its default port so the panel finds it.
-          UART_HUB: '1'
-        failOnStartupError: true
+# 外部（非 DSH）用户仍用 `node dist/index.js` 作为标准 MCP 服务器，28 个工具全量；
+# 那是独立进程，与本 bundle 无关。
 - insert:
     - id: local-uart
       name: '@local/dsh-uart'
+      config:
+        # Agent 工具默认开；设置页的开关会持久化到 ~/.mcp-uart/agent.json
+        agentTool: true

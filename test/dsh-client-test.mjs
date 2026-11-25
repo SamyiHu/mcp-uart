@@ -150,7 +150,9 @@ check('settings section renders both placements and switches one', () => {
     const walk = (node) => {
       if (!node || typeof node !== 'object') return
       if (Array.isArray(node)) return node.forEach(walk)
-      if (node.type === 'button' && node.props?.['aria-pressed'] !== undefined) found.push(node)
+      // Placement cards carry an explicit marker; the decode row's format
+      // buttons are aria-pressed as well but are not placements.
+      if (node.type === 'button' && node.props?.['data-uart-placement'] === 'true') found.push(node)
       ;(node.props?.children ?? []).forEach(walk)
     }
     walk(tree)
@@ -173,6 +175,42 @@ check('settings section renders both placements and switches one', () => {
   const second = cardsOf(render(section.component(props)))
   assert.equal(second[0].props['aria-pressed'], 'false')
   assert.equal(second[1].props['aria-pressed'], 'true', 'the choice must be reflected on the next render')
+})
+
+check('settings section offers the Agent tool switch', () => {
+  const section = registrations.find((entry) => entry.options.name === 'settings.section')
+  const props = section.options.inject()
+
+  const render = (node) => {
+    if (node === null || node === undefined || typeof node !== 'object') return node
+    if (Array.isArray(node)) return node.map(render)
+    if (typeof node.type === 'function') return render(node.type(node.props))
+    return { ...node, props: { ...node.props, children: (node.props.children ?? []).map(render) } }
+  }
+  const textOf = (node) => {
+    if (typeof node === 'string' || typeof node === 'number') return String(node)
+    if (!node || typeof node !== 'object') return ''
+    if (Array.isArray(node)) return node.map(textOf).join('')
+    return textOf(node.props?.children ?? [])
+  }
+  const switchesOf = (tree) => {
+    const found = []
+    const walk = (node) => {
+      if (!node || typeof node !== 'object') return
+      if (Array.isArray(node)) return node.forEach(walk)
+      if (node.props?.role === 'switch') found.push(node)
+      ;(node.props?.children ?? []).forEach(walk)
+    }
+    walk(tree)
+    return found
+  }
+
+  const tree = render(section.component(props))
+  const text = textOf(tree)
+  assert.ok(text.includes('#optionAgentTool'), 'the Agent tool switch must be described in settings')
+  const switches = switchesOf(tree)
+  assert.equal(switches.length, 3, `expected three switches (agent, dock chip, follow), got ${switches.length}`)
+  assert.equal(typeof switches[0].props.onClick, 'function', 'the Agent switch must be operable')
 })
 
 check('the float window rect is clamped into the current viewport', () => {

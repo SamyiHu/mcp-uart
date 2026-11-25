@@ -19,22 +19,29 @@ Serial Port MCP Server for AI agents. Lets Claude, Cline, Cursor, and other MCP-
 
 ## DeepSeek Harness (DSH) plugin
 
-`dsh-plugin/` packages the same serial stack as a DSH bundle with a native panel
+`dsh-plugin/` packages the serial stack as a DSH bundle with a native panel
 (sidebar → **串口**): port picker, live TX/RX tape with filters, send box, DTR/RTS
-and Break. It does **not** open a second serial stack — it proxies `/uart/*` to the
-Hub the MCP server already runs, so the panel and the Agent share one session.
+and Break.
+
+The bundle is self-contained: it starts its own Hub (`dist/hub.js` child process,
+which it stops on unload) and registers **three grouped agent tools** —
+`uart_serial`, `uart_dut`, `uart_view` — instead of mounting the MCP server. DSH
+sessions therefore see no `mcp__uart__*` tools; the settings page has an
+**Agent 工具** switch that registers or unregisters them at runtime.
 
 ```
 dsh-plugin/
-  index.js        Host half: discovery (~/.mcp-uart/hub.json, else probe 8787..8817) + /uart proxy
-  client.js       Carrier: registers the sidebar panel and mounts the shared console module
-  cordis.patch.yml declares BOTH rows: mcp-uart (MCP server) + local-uart (panel)
-  locale/, icon.svg, docs/DETAIL.md
+  index.js         Host half: starts the Hub, proxies /uart/*, /uart/agent switch, /uart/tools diagnosis
+  hub-host.js      Hub child process: spawn dist/hub.js, parse HUB_URL=, stop on dispose
+  agent-tools.js   The three grouped tools, dispatching to the Hub HTTP API
+  client.js        Carrier: sidebar panel + float orb + dock strip + settings page
+  cordis.patch.yml Panel row only — no MCP client row
+  locale/, icon.svg, docs/DETAIL.md, DESIGN-*.md
 ```
 
-**一个 bundle 管两端**（和 `dsh-instrument-host` 同构）：`cordis.patch.yml` 同时插入
-MCP 行和面板行，装上即有 Agent 串口工具和串口面板，拆掉也是一起。profile 里
-不需要再手工写 `mcp-uart` 的 MCP 行。
+External (non-DSH) users keep the standard MCP surface: `node dist/index.js` is
+still a full MCP server with all 28 tools, unaffected by this bundle.
+See `dsh-plugin/DESIGN-dual-mode-tools.md` for the design and its verification.
 
 The console UI itself lives in **one** file, `src/hub/public/uart-ui.js` (framework-free
 ESM). The standalone page loads it directly; `npm run build:dsh` inlines it into

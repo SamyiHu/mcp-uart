@@ -2066,8 +2066,16 @@ const CSS = `
 .uart-chip.is-offline { color: var(--uart-danger); border-color: color-mix(in srgb, var(--uart-danger) 35%, transparent); background: color-mix(in srgb, var(--uart-danger) 8%, transparent); }
 .uart-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
 .uart-chip.is-online .uart-dot { box-shadow: 0 0 0 2px color-mix(in srgb, var(--uart-ok) 22%, transparent); }
-.uart-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 248px minmax(0, 1fr); gap: 14px; }
-.uart-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; min-height: 0; }
+/* One explicit grid row: height comes from .uart-body, never from its content.
+   Without this the tape grew with every received frame and pushed the send box
+   out of the root (which clips overflow), so the 发送 button disappeared. */
+.uart-body {
+  flex: 1 1 auto; min-height: 0; min-width: 0;
+  display: grid; grid-template-columns: 248px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 14px; overflow: hidden;
+}
+.uart-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; min-height: 0; overflow: hidden; }
 .uart-card {
   display: flex; flex-direction: column;
   min-height: 0;
@@ -2081,7 +2089,7 @@ const CSS = `
    short, the BODY scrolls and the card keeps its natural height. Without this a
    flex-shrunk rail cut the "高级参数" row in half. */
 .uart-rail { flex: none; min-height: max-content; }
-.uart-tape-card { flex: 1 1 auto; min-height: 140px; overflow: hidden; }
+.uart-tape-card { flex: 1 1 0; min-height: 0; overflow: hidden; }
 .uart-send-card { flex: none; padding: 12px; gap: 8px; }
 .uart-group { display: flex; flex-direction: column; gap: 10px; }
 .uart-group-title {
@@ -2189,7 +2197,7 @@ const CSS = `
 .uart-empty-icon { color: var(--uart-border-strong); }
 .uart-empty-title { font-size: 13px; font-weight: 600; }
 .uart-empty-body { color: var(--uart-text-2); font-size: 12px; max-width: 34ch; }
-.uart-composer { display: flex; gap: 8px; align-items: flex-end; }
+.uart-composer { display: flex; gap: 8px; align-items: flex-end; flex: none; }
 .uart-textarea {
   flex: 1 1 auto; min-width: 0; min-height: 44px; max-height: 140px;
   padding: 8px 10px;

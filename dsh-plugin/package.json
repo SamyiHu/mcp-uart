@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Serial console + MCP server bundle for DeepSeek Harness: one package manages both the Agent's serial tools and the panel/orb/dock console, over the same serial session.",
+  "description": "Serial panel + DSH-native agent tools for DeepSeek Harness: one bundle owns the local Hub, the panel/orb/dock console, and three grouped UART tools (uart_serial / uart_dut / uart_view).",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
@@ -12,12 +12,15 @@
   },
   "files": [
     "index.js",
+    "agent-tools.js",
+    "hub-host.js",
     "client.js",
     "cordis.patch.yml",
+    "DESIGN-floating-bubble.md",
+    "DESIGN-dual-mode-tools.md",
     "locale/*.json",
     "docs/DETAIL.md",
-    "icon.svg",
-    "README.md"
+    "icon.svg"
   ],
   "dsh": {
     "bundle": {

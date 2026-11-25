@@ -1,4 +1,4 @@
-﻿/**
+/**
  * UART panel —DSH carrier (source).
  *
  * `dsh-plugin/client.js` is GENERATED from this file by
@@ -6,7 +6,7 @@
  * marker below. The standalone Hub page loads that same file directly, so the
  * console stays one implementation with two carriers.
  *
- * Why inline instead of `import()`: the Desktop client runs on the `dsh-app://`
+ * Why inline instead of a dynamic module load: the Desktop client runs on the `dsh-app://`
  * scheme, where dynamic module imports are refused.
  *
  * Placement: the console can live in the main panel (default) or in a floating
@@ -32,8 +32,8 @@ window.__ModuleLoader__.load({
     const FOLLOW_KEY = 'dsh-uart.dock-follow'
     const ROUTE = 'uart'
 
-    const zh = { nav: '串口', title: '串口调试', float: '悬浮窗', dock: '停靠到工作区', close: '关闭', parkedTitle: '串口控制台在悬浮窗中', parkedBody: '关闭悬浮窗，或点「停靠到工作区」把控制台放回这里。', openFloat: '打开悬浮窗', settingsTitle: '串口控制台', settingsBody: '选择控制台显示的位置。改动会立即生效，并记住到下次启动。', optionPanel: '工作区面板', optionPanelBody: '控制台占用串口面板的主区域。', optionFloat: '悬浮球', optionFloatBody: '右下角显示一个串口圆球：鼠标碰上去展开成胶囊，点击展开完整控制台。', optionDockChip: '底栏状态条', optionDockChipBody: '在输入框下方显示一行串口状态（连接、波特率、帧率），点「展开」以悬浮窗打开控制台。', optionDockFollow: '自动滚到最新', optionDockFollowBody: '底栏预览有新数据时自动滚到底部；向上翻看旧数据时暂停，滚回底部后恢复。', decodeTitle: '数据解码', decodeBody: '底栏预览按这个偏好显示接收数据；编码只影响显示，不会重连串口。', decodeAuto: '自动', decodeText: '文本', decodeHex: 'HEX', optionCurrent: '当前' }
-    const en = { nav: 'UART', title: 'Serial console', float: 'Float', dock: 'Dock to panel', close: 'Close', parkedTitle: 'The console is in a floating window', parkedBody: 'Close the floating window, or dock it back into this panel.', openFloat: 'Open floating window', settingsTitle: 'Serial console', settingsBody: 'Choose where the console lives. Changes apply immediately and are remembered across launches.', optionPanel: 'Workspace panel', optionPanelBody: 'The console fills the UART panel area.', optionFloat: 'Floating orb', optionFloatBody: 'A small serial orb sits at the bottom right: hover it for a capsule, click it to open the full console.', optionDock: 'Composer dock', optionDockBody: 'The console sits under the message box, usable while you chat.', optionDockChip: 'Dock status row', optionDockChipBody: 'Shows one compact serial line under the composer (link, baud, frame rate); Expansion opens the console right there.', optionDockFollow: 'Follow newest data', optionDockFollowBody: 'Scrolls the dock preview to the newest frame. Pauses while you scroll up, resumes when you return to the bottom.', decodeTitle: 'Data decoding', decodeBody: 'The dock preview decodes received bytes with this preference. The encoding only affects display; it never reconnects the port.', decodeAuto: 'Auto', decodeText: 'Text', decodeHex: 'HEX', optionCurrent: 'Current' }
+    const zh = { nav: '串口', title: '串口调试', float: '悬浮窗', dock: '停靠到工作区', close: '关闭', parkedTitle: '串口控制台在悬浮窗中', parkedBody: '关闭悬浮窗，或点「停靠到工作区」把控制台放回这里。', openFloat: '打开悬浮窗', settingsTitle: '串口控制台', settingsBody: '选择控制台显示的位置。改动会立即生效，并记住到下次启动。', optionPanel: '工作区面板', optionPanelBody: '控制台占用串口面板的主区域。', optionFloat: '悬浮球', optionFloatBody: '右下角显示一个串口圆球：鼠标碰上去展开成胶囊，点击展开完整控制台。', optionDockChip: '底栏状态条', optionDockChipBody: '在输入框下方显示一行串口状态（连接、波特率、帧率），点「展开」以悬浮窗打开控制台。', optionAgentTool: 'Agent 工具', optionAgentToolBody: '允许 Agent 调用串口工具（uart_serial / uart_dut / uart_view）。关闭后模型侧没有任何串口工具，面板照常可用。', optionDockFollow: '自动滚到最新', optionDockFollowBody: '底栏预览有新数据时自动滚到底部；向上翻看旧数据时暂停，滚回底部后恢复。', decodeTitle: '数据解码', decodeBody: '底栏预览按这个偏好显示接收数据；编码只影响显示，不会重连串口。', decodeAuto: '自动', decodeText: '文本', decodeHex: 'HEX', optionCurrent: '当前' }
+    const en = { nav: 'UART', title: 'Serial console', float: 'Float', dock: 'Dock to panel', close: 'Close', parkedTitle: 'The console is in a floating window', parkedBody: 'Close the floating window, or dock it back into this panel.', openFloat: 'Open floating window', settingsTitle: 'Serial console', settingsBody: 'Choose where the console lives. Changes apply immediately and are remembered across launches.', optionPanel: 'Workspace panel', optionPanelBody: 'The console fills the UART panel area.', optionFloat: 'Floating orb', optionFloatBody: 'A small serial orb sits at the bottom right: hover it for a capsule, click it to open the full console.', optionDock: 'Composer dock', optionDockBody: 'The console sits under the message box, usable while you chat.', optionDockChip: 'Dock status row', optionDockChipBody: 'Shows one compact serial line under the composer (link, baud, frame rate); Expansion opens the console right there.', optionAgentTool: 'Agent tools', optionAgentToolBody: 'Lets the Agent call the serial tools (uart_serial / uart_dut / uart_view). Off removes every serial tool from the model; the panel keeps working.', optionDockFollow: 'Follow newest data', optionDockFollowBody: 'Scrolls the dock preview to the newest frame. Pauses while you scroll up, resumes when you return to the bottom.', decodeTitle: 'Data decoding', decodeBody: 'The dock preview decodes received bytes with this preference. The encoding only affects display; it never reconnects the port.', decodeAuto: 'Auto', decodeText: 'Text', decodeHex: 'HEX', optionCurrent: 'Current' }
 
     // ── placement store (panel | float) ────────────────────────────────────
     const MODE_KEY = 'dsh-uart.display-mode'
@@ -1146,6 +1146,10 @@ window.__ModuleLoader__.load({
         'button',
         {
           type: 'button',
+          // Stable marker: the settings page also contains aria-pressed buttons
+          // (the decode format row), so tests and tooling need a way to tell
+          // the placement cards apart.
+          'data-uart-placement': 'true',
           'aria-pressed': active ? 'true' : 'false',
           onClick: onSelect,
           style: {
@@ -1255,6 +1259,7 @@ window.__ModuleLoader__.load({
       const [mode] = useMode()
       const [chip, setChip] = useDockChip()
       const [follow, setFollow] = useDockFollow()
+      const [agent, setAgent] = useAgentTool()
       return h(
         'div',
         { style: { display: 'flex', flexDirection: 'column', gap: '12px', padding: '2px' } },
@@ -1283,6 +1288,12 @@ window.__ModuleLoader__.load({
           }),
         ),
         h(ToggleRow, {
+          title: tr('optionAgentTool'),
+          description: tr('optionAgentToolBody'),
+          checked: agent,
+          onChange: setAgent,
+        }),
+        h(ToggleRow, {
           title: tr('optionDockChip'),
           description: tr('optionDockChipBody'),
           checked: chip,
@@ -1296,6 +1307,40 @@ window.__ModuleLoader__.load({
         }),
         h(DecodeRow, { tr }),
       )
+    }
+
+    /** Agent-tool switch: server-owned preference, so Host and settings agree. */
+    function useAgentTool() {
+      const [enabled, setEnabled] = useState(true)
+      useEffect(() => {
+        let cancelled = false
+        ;(async () => {
+          try {
+            const response = await fetch(apiPath(`${ROUTE}/agent`), { credentials: 'same-origin' })
+            const data = await response.json()
+            if (!cancelled && typeof data?.enabled === 'boolean') setEnabled(data.enabled)
+          } catch {
+            /* keep the default until the host answers */
+          }
+        })()
+        return () => { cancelled = true }
+      }, [])
+      const update = useCallback(async (next) => {
+        setEnabled(next)
+        try {
+          const response = await fetch(apiPath(`${ROUTE}/agent`), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ enabled: next }),
+          })
+          const data = await response.json()
+          if (typeof data?.enabled === 'boolean') setEnabled(data.enabled)
+        } catch {
+          setEnabled(!next)
+        }
+      }, [])
+      return [enabled, update]
     }
 
     /** Decode preference: how received bytes are shown, and in which encoding. */
