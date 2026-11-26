@@ -413,9 +413,10 @@ export function createUartUi({ root, apiBase = './', locale = 'zh', externalUrl 
     text: t('copyAll'),
     title: t('copyAllHint'),
     onclick: () => {
-      const visible = state.frames.filter(passes)
+      const hexFilter = state.filter.hex.replace(/\s+/g, '').toUpperCase()
+      const visible = state.frames.filter((frame) => passes(frame, hexFilter))
       if (visible.length === 0) return
-      copyText(visible.map((frame) => textOf(frame)).join('\n'))
+      copyText(visible.map(frameText).join('\n'))
     },
   })
   refs.clear = el('button', {
@@ -677,10 +678,27 @@ export function createUartUi({ root, apiBase = './', locale = 'zh', externalUrl 
   root.append(header, refs.owner, refs.banner, refs.body, dutBody, historyBody)
 
   // ── rendering ────────────────────────────────────────────────────────────
-  function passes(frame) {
-    const hex = state.filter.hex.replace(/\s+/g, '').toUpperCase()
+  /**
+   * Precompute the three display strings once, when the frame arrives, instead
+   * of on every render. At a few hundred frames/second the old path ran a Date
+   * construction, a HEX regex + replace, and a TextDecoder per row per paint —
+   * multiplied by the 800 visible rows on each flush.
+   */
+  function packFrame(frame) {
+    if (frame._packed) return frame
+    frame._time = fmtTime(frame.timestamp)
+    frame._hex = prettyHex(frame.raw)
+    frame._text = textOf(frame)
+    frame._packed = true
+    return frame
+  }
+  const frameTime = (frame) => frame._time ?? fmtTime(frame.timestamp)
+  const frameHex = (frame) => frame._hex ?? prettyHex(frame.raw)
+  const frameText = (frame) => frame._text ?? textOf(frame)
+
+  function passes(frame, hexFilter) {
     if (state.filter.dir !== 'all' && frame.direction !== state.filter.dir) return false
-    if (hex.length > 0 && !String(frame.raw ?? '').toUpperCase().includes(hex)) return false
+    if (hexFilter.length > 0 && !String(frame.raw ?? '').toUpperCase().includes(hexFilter)) return false
     if (state.filter.text.length > 0 && !String(frame.data ?? '').includes(state.filter.text)) return false
     return true
   }
@@ -692,13 +710,13 @@ export function createUartUi({ root, apiBase = './', locale = 'zh', externalUrl 
     const row = el(
       'div',
       { class: `uart-frame ${isTx ? 'is-tx' : 'is-rx'}${hasHex ? ' has-hex' : ' no-hex'}${hasAscii ? ' has-ascii' : ' no-ascii'}` },
-      el('span', { class: 'uart-time', text: fmtTime(frame.timestamp) }),
+      el('span', { class: 'uart-time', text: frameTime(frame) }),
       el('span', { class: 'uart-dir', text: isTx ? 'TX' : 'RX' }),
       el('span', { class: 'uart-len', text: `${frame.length}B` }),
     )
-    if (hasHex) row.append(el('span', { class: 'uart-hex', text: prettyHex(frame.raw) }))
+    if (hasHex) row.append(el('span', { class: 'uart-hex', text: frameHex(frame) }))
     if (hasHex && hasAscii) row.append(el('span', { class: 'uart-grip-hex', title: t('dragDivider') }))
-    if (hasAscii) row.append(el('span', { class: 'uart-ascii', text: textOf(frame) }))
+    if (hasAscii) row.append(el('span', { class: 'uart-ascii', text: frameText(frame) }))
     return row
   }
 
@@ -743,10 +761,11 @@ export function createUartUi({ root, apiBase = './', locale = 'zh', externalUrl 
     flushScheduled = false
     if (pendingFrames.length === 0) return
     const batch = pendingFrames.splice(0, pendingFrames.length)
+    const hexFilter = state.filter.hex.replace(/\s+/g, '').toUpperCase()
     let matched = 0
     const rows = []
     for (const frame of batch) {
-      if (!passes(frame)) continue
+      if (!passes(frame, hexFilter)) continue
       matched += 1
       rows.push(frame)
     }
@@ -774,6 +793,7 @@ export function createUartUi({ root, apiBase = './', locale = 'zh', externalUrl 
   }
 
   function appendFrame(frame) {
+    packFrame(frame)
     state.frames.push(frame)
     // Bulk trim, same reason as the Hub: `slice(-4000)` per frame copied 4000
     // entries for every single frame and made the console stutter at speed.
