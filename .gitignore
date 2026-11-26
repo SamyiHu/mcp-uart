@@ -6,3 +6,4 @@ dist/
 Thumbs.db
 .mcp.json
 rust/target/
+rust/.target/

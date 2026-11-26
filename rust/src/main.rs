@@ -35,6 +35,9 @@ enum Command {
         host: String,
         #[arg(long, default_value_t = 8787)]
         port: u16,
+        /// Number of following ports to try when the preferred one is busy.
+        #[arg(long, default_value_t = 30)]
+        port_span: u16,
     },
     /// Speak MCP over stdin/stdout.
     Stdio,
@@ -43,13 +46,33 @@ enum Command {
 fn main() {
     let cli = Cli::parse();
     match cli.command {
-        Command::Hub { host, port } => {
+        Command::Hub { host, port, port_span } => {
             let manager = SerialManager::new();
             let state = hub::HubState::new(manager);
-            if let Err(err) = hub::serve(state, &format!("{host}:{port}")) {
-                eprintln!("uartd: cannot bind {host}:{port}: {err}");
-                std::process::exit(1);
+            let mut last = None;
+            for candidate in port..=port.saturating_add(port_span) {
+                match hub::serve(state.clone(), &format!("{host}:{candidate}")) {
+                    Ok(()) => return,
+                    Err(err) => {
+                        // Windows maps WSAEADDRINUSE (10048) to Other, so check
+                        // the raw OS error as well as the portable ErrorKind.
+                        let busy = err.kind() == std::io::ErrorKind::AddrInUse
+                            || err.kind() == std::io::ErrorKind::PermissionDenied
+                            || err.raw_os_error() == Some(10048);
+                        if !busy {
+                            eprintln!("uartd: cannot bind {host}:{candidate}: {err}");
+                            std::process::exit(1);
+                        }
+                        last = Some(err);
+                    }
+                }
             }
+            eprintln!(
+                "uartd: cannot bind any port in {port}..{}: {}",
+                port.saturating_add(port_span),
+                last.map(|e| e.to_string()).unwrap_or_default()
+            );
+            std::process::exit(1);
         }
         Command::Stdio => {
             let manager = SerialManager::new();

@@ -120,8 +120,19 @@ impl Read for SseBody {
 }
 
 pub fn serve(state: Arc<HubState>, addr: &str) -> std::io::Result<()> {
-    let server = Server::http(addr).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    let server = Server::http(addr).map_err(|e| {
+        // tiny_http boxes the error without raw_os_error; carry the text so the
+        // launcher can detect WSAEADDRINUSE (10048) for port fallback.
+        let message = e.to_string();
+        if message.contains("10048") || message.to_lowercase().contains("address already in use") {
+            std::io::Error::new(std::io::ErrorKind::AddrInUse, message)
+        } else {
+            std::io::Error::new(std::io::ErrorKind::Other, message)
+        }
+    })?;
     eprintln!("UART hub listening on http://{addr}");
+  // Machine-readable line for the DSH host plugin (same marker as dist/hub.js).
+  eprintln!("HUB_URL=http://{addr}");
 
     for request in server.incoming_requests() {
         let state = Arc::clone(&state);
