@@ -103,7 +103,7 @@ fn serial_parameters() -> Value {
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["list_ports","open","close","write","read","status","set_signals","configure"],
+                "enum": ["list_ports","open","close","write","read","capture","status","set_signals","configure"],
                 "description": "Operation to run."
             },
             "path": { "type": "string", "description": "Serial port, e.g. COM6 or /dev/ttyUSB0." },
@@ -115,7 +115,14 @@ fn serial_parameters() -> Value {
             "direction": { "type": "string", "enum": ["all","rx","tx"] },
             "dtr": { "type": "boolean" },
             "rts": { "type": "boolean" },
-            "break": { "type": "boolean" }
+            "break": { "type": "boolean" },
+            "timeoutMs": { "type": "integer", "description": "capture: hard upper bound (ms)." },
+            "silenceMs": { "type": "integer", "description": "capture: stop after this much RX silence." },
+            "send": { "type": "object", "description": "capture: optional trigger written at t0, e.g. {data, encoding}." },
+            "filter": { "type": "object", "description": "capture: direction/matchHex/matchText/minLength/maxLength." },
+            "stop": { "type": "object", "description": "capture: bytes/frames/untilHex/untilText conditions (first match wins)." },
+            "startHex": { "type": "string", "description": "capture: drop frames before this HEX marker." },
+            "includeTx": { "type": "boolean", "description": "capture: include TX frames (default false)." }
         },
         "required": ["action"],
         "additionalProperties": false
@@ -169,7 +176,7 @@ fn tool_schemas() -> Vec<Value> {
         json!({
             "name": "uart_serial",
             "title": "Serial port",
-            "description": "Serial port control: list ports, open/close, send and read data, modem signals, live encoding/framing changes. Select the operation with `action`.",
+            "description": "Serial port control: list ports, open/close, send and read data, condition-driven capture, modem signals, live encoding/framing changes. Select the operation with `action`.",
             "inputSchema": serial_parameters()
         }),
         json!({
@@ -257,6 +264,23 @@ fn call_serial(manager: &Arc<SerialManager>, args: &Value) -> Result<String, Str
             if messages.is_empty() { return Ok("No frames buffered.".into()); }
             Ok(messages.iter().map(frame_line).collect::<Vec<_>>().join("\n"))
         }
+        "capture" => {
+            let id = match args.get("connectionId").and_then(|v| v.as_str()) {
+                Some(s) => s.to_string(),
+                None => active_id(manager)?,
+            };
+            let mut params = json!({});
+            if let Some(v) = args.get("timeoutMs") { params["timeoutMs"] = v.clone(); }
+            if let Some(v) = args.get("silenceMs") { params["silenceMs"] = v.clone(); }
+            if let Some(v) = args.get("send") { params["send"] = v.clone(); }
+            if let Some(v) = args.get("filter") { params["filter"] = v.clone(); }
+            if let Some(v) = args.get("stop") { params["stop"] = v.clone(); }
+            if let Some(v) = args.get("startHex") { params["startHex"] = v.clone(); }
+            if let Some(v) = args.get("includeTx") { params["includeTx"] = v.clone(); }
+            if params.get("timeoutMs").is_none() { params["timeoutMs"] = json!(3000); }
+            let result = crate::capture::capture(manager, &id, &params)?;
+            Ok(format_capture(&result))
+        }
         "status" => {
             let connections = manager.list_connections();
             let active = connections.iter().find(|c| c.status == "open");
@@ -293,6 +317,22 @@ fn frame_line(message: &crate::model::SerialMessage) -> String {
     let dir = match message.direction { crate::model::Direction::Tx => "TX", crate::model::Direction::Rx => "RX" };
     let body = match message.direction { crate::model::Direction::Tx => &message.raw, crate::model::Direction::Rx => &message.data };
     format!("{time} {dir}  {body}")
+}
+
+fn format_capture(result: &Value) -> String {
+    let reason = result.get("reason").and_then(|v| v.as_str()).unwrap_or("");
+    let elapsed = result.get("elapsedMs").and_then(|v| v.as_u64()).unwrap_or(0);
+    let count = result.get("frameCount").and_then(|v| v.as_u64()).unwrap_or(0);
+    let bytes = result.get("totalBytes").and_then(|v| v.as_u64()).unwrap_or(0);
+    let frames = result.get("frames").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let lines = frames.iter().map(|f| {
+        let t = f.get("tMs").and_then(|v| v.as_u64()).unwrap_or(0);
+        let dir = f.get("direction").and_then(|v| v.as_str()).unwrap_or("");
+        let raw = f.get("raw").and_then(|v| v.as_str()).unwrap_or("");
+        let data = f.get("data").and_then(|v| v.as_str()).unwrap_or("");
+        format!("+{t:>5}ms  {dir:<2}  {raw:<24}  {data}")
+    }).collect::<Vec<_>>().join("\n");
+    format!("captured {count} frame(s), {bytes}B in {elapsed}ms (reason={reason})\n{lines}")
 }
 
 fn call_view(manager: &Arc<SerialManager>, args: &Value) -> Result<String, String> {

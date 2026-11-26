@@ -112,6 +112,14 @@ try {
     }
   })
 
+  await check('/api/capture requires a connection (409)', async () => {
+    const { status, payload } = await req(base, 'POST', '/api/capture', {
+      timeoutMs: 100, stop: { frames: 1 }
+    })
+    assert(status === 409, `expected 409, got ${status}`)
+    assert(String(payload.error).includes('Not connected'), `error text: ${payload.error}`)
+  })
+
   await check('unknown orchestrator subpath returns 404', async () => {
     const { status } = await req(base, 'GET', '/api/orchestrator/nonexistent')
     assert(status === 404, `expected 404, got ${status}`)

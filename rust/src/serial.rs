@@ -61,6 +61,13 @@ impl SerialManager {
         Subscription(rx)
     }
 
+    /// Fan a message out to all subscribers. Used by the reader loop and by
+    /// capture tests that simulate a device stream without real hardware.
+    pub fn emit_message(&self, message: SerialMessage) {
+        let mut subs = self.subscribers.lock().unwrap();
+        subs.retain(|tx| tx.send((message.connection_id.clone(), message.clone())).is_ok());
+    }
+
     /// Register a raw RX byte hook for a connection. Returns a token used to
     /// remove it. The hook is called with each raw read chunk before framing.
     pub fn add_data_hook(

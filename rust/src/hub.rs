@@ -451,6 +451,20 @@ fn handle(state: Arc<HubState>, mut request: tiny_http::Request) -> std::io::Res
                 Err(err) => respond_json(request, 500, json_error(err)),
             }
         }
+        (Method::Post, "/api/capture") => {
+            let body: Value = match read_json(&mut request) {
+                Ok(v) => v,
+                Err(err) => return respond_json(request, 400, json_error(err)),
+            };
+            let active = state.active.lock().unwrap().clone();
+            let Some(id) = active else {
+                return respond_json(request, 409, json_error("Not connected"));
+            };
+            match crate::capture::capture(&state.manager, &id, &body) {
+                Ok(result) => respond_json(request, 200, result),
+                Err(err) => respond_json(request, 500, json_error(err)),
+            }
+        }
         (Method::Post, "/api/signals") => {
             let body: Value = match read_json(&mut request) {
                 Ok(v) => v,

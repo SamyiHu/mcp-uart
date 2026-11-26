@@ -7,6 +7,7 @@
 //! The Hub speaks the same contract as the browser console and the DSH panel
 //! already use, so swapping Node for Rust changes nothing on the UI side.
 
+mod capture;
 mod orchestrator;
 mod orchestrator_engine;
 mod orchestrator_sequence;
