@@ -34,6 +34,11 @@ struct Conn {
 pub struct SerialManager {
     inner: Mutex<HashMap<String, Conn>>,
     subscribers: Mutex<Vec<mpsc::Sender<(String, SerialMessage)>>>,
+    /// Raw RX byte hooks, keyed by connection id. Each hook gets the raw chunk
+    /// before framing/decoding — the DUT engine needs bytes to parse its own
+    /// frames and checksum. `u64` is a registration token for removal.
+    raw_hooks: Mutex<HashMap<String, Vec<(u64, Arc<dyn Fn(&[u8]) + Send + Sync>)>>>,
+    next_hook: AtomicU64,
     next_id: AtomicU64,
     seq: AtomicU64,
 }
@@ -43,6 +48,8 @@ impl SerialManager {
         Arc::new(Self {
             inner: Mutex::new(HashMap::new()),
             subscribers: Mutex::new(Vec::new()),
+            raw_hooks: Mutex::new(HashMap::new()),
+            next_hook: AtomicU64::new(1),
             next_id: AtomicU64::new(1),
             seq: AtomicU64::new(0),
         })
@@ -52,6 +59,38 @@ impl SerialManager {
         let (tx, rx) = mpsc::channel();
         self.subscribers.lock().unwrap().push(tx);
         Subscription(rx)
+    }
+
+    /// Register a raw RX byte hook for a connection. Returns a token used to
+    /// remove it. The hook is called with each raw read chunk before framing.
+    pub fn add_data_hook(
+        &self,
+        connection_id: &str,
+        hook: Arc<dyn Fn(&[u8]) + Send + Sync>,
+    ) -> u64 {
+        let token = self.next_hook.fetch_add(1, Ordering::Relaxed);
+        self.raw_hooks
+            .lock()
+            .unwrap()
+            .entry(connection_id.to_string())
+            .or_default()
+            .push((token, hook));
+        token
+    }
+
+    pub fn remove_data_hook(&self, connection_id: &str, token: u64) {
+        if let Some(hooks) = self.raw_hooks.lock().unwrap().get_mut(connection_id) {
+            hooks.retain(|(t, _)| *t != token);
+        }
+    }
+
+    fn dispatch_raw(&self, connection_id: &str, bytes: &[u8]) {
+        let hooks = self.raw_hooks.lock().unwrap();
+        if let Some(list) = hooks.get(connection_id) {
+            for (_, hook) in list {
+                hook(bytes);
+            }
+        }
     }
 
     pub fn list_ports(&self) -> Vec<PortInfo> {
@@ -170,6 +209,8 @@ impl SerialManager {
                 Ok(n) => {
                     clock.mark();
                     let bytes = &chunk[..n];
+                    // Raw hooks (DUT byte parser) see bytes before framing.
+                    self.dispatch_raw(&id, bytes);
                     let frames = framer.push(bytes, false);
                     for frame in frames {
                         self.record(&id, &frame, &encoding, buffer_size);

@@ -8,6 +8,7 @@
 //! already use, so swapping Node for Rust changes nothing on the UI side.
 
 mod dut;
+mod dut_engine;
 mod encoding;
 mod framing;
 mod hub;
@@ -48,7 +49,15 @@ fn main() {
     match cli.command {
         Command::Hub { host, port, port_span } => {
             let manager = SerialManager::new();
-            let state = hub::HubState::new(manager);
+            // Profile directory: env override, else the repo's src/dut/profiles
+            // relative to this source tree (CARGO_MANIFEST_DIR at compile time).
+            let profiles_dir = std::env::var_os("UART_DUT_PROFILES")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| {
+                    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                        .join("..").join("src").join("dut").join("profiles")
+                });
+            let state = hub::HubState::new(manager, &profiles_dir);
             let mut last = None;
             for candidate in port..=port.saturating_add(port_span) {
                 match hub::serve(state.clone(), &format!("{host}:{candidate}")) {

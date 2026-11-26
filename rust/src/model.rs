@@ -115,6 +115,7 @@ pub struct PortInfo {
 
 /// DUT profile as stored in `profiles/*.json`.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DutProfile {
     pub name: String,
     #[serde(default)]
@@ -128,6 +129,8 @@ pub struct DutProfile {
     pub commands: Vec<DutCommand>,
     #[serde(default)]
     pub smoke: Vec<String>,
+    #[serde(default)]
+    pub low_power: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -165,6 +168,8 @@ pub struct DutCommand {
     #[serde(default)]
     pub judge: Option<DutJudge>,
     #[serde(default)]
+    pub params: Option<serde_json::Value>,
+    #[serde(default)]
     pub note: Option<String>,
     #[serde(default)]
     pub fpga_suitable: Option<bool>,
@@ -177,6 +182,8 @@ pub struct DutJudge {
     pub result_idx: Option<usize>,
     #[serde(default)]
     pub bytes: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(default)]
+    pub frames_bytes: Option<Vec<Option<serde_json::Map<String, serde_json::Value>>>>,
     #[serde(default)]
     pub extra_contains: Option<String>,
     #[serde(default)]

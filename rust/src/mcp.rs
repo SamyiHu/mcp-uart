@@ -1,18 +1,32 @@
-//! Minimal MCP stdio server (JSON-RPC 2.0, newline-delimited).
+//! MCP stdio server (JSON-RPC 2.0, newline-delimited).
 //!
-//! Tool surface parity with the Node build for the serial primitives; the DUT
-//! tools land in milestone 3 (see rust/README.md). Keeping the transport hand
-//! rolled avoids a heavy async runtime for what is a line-oriented loop.
+//! Three grouped tools, matching the Node build and the DSH-native tools:
+//!   uart_serial  serial port control
+//!   uart_dut     DUT (orchestrator) profiles and smoke runs
+//!   uart_view    frames / history / visualisations
+//!
+//! Keeping the transport hand rolled avoids a heavy async runtime for what is
+//! a line-oriented loop.
 
 use std::io::{BufRead, Write};
 use std::sync::Arc;
 
 use serde_json::{json, Value};
 
+use crate::dut::{DutEvent, DutManager};
 use crate::model::SerialConfig;
 use crate::serial::SerialManager;
 
 pub fn serve(manager: Arc<SerialManager>) -> std::io::Result<()> {
+    // MCP stdio has its own serial stack (and its own DUT sessions) — it is a
+    // separate process from the Hub. Load the shipped profiles from the repo.
+    let profiles_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .join("src")
+        .join("dut")
+        .join("profiles");
+    let dut = DutManager::new(manager.clone(), &profiles_dir);
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
 
@@ -52,7 +66,7 @@ pub fn serve(manager: Arc<SerialManager>) -> std::io::Result<()> {
             "tools/call" => {
                 let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
                 let args = params.get("arguments").cloned().unwrap_or(json!({}));
-                match call_tool(&manager, name, &args) {
+                match call_tool(&manager, &dut, name, &args) {
                     Ok(text) => Some(json!({
                         "jsonrpc": "2.0",
                         "id": id,
@@ -80,132 +94,297 @@ pub fn serve(manager: Arc<SerialManager>) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Input schema shared shape: `action` enum plus the merged parameters of the
+/// member operations. All fields are optional so a single schema can serve all
+/// actions; the chosen action is validated in call_tool.
+fn serial_parameters() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["list_ports","open","close","write","read","status","set_signals","configure"],
+                "description": "Operation to run."
+            },
+            "path": { "type": "string", "description": "Serial port, e.g. COM6 or /dev/ttyUSB0." },
+            "baudRate": { "type": "integer", "description": "Baud rate (default 115200)." },
+            "data": { "type": "string", "description": "Payload to send." },
+            "encoding": { "type": "string", "description": "utf8 | gbk | gb18030 | big5 | shift_jis | euc-kr | latin1 | hex | base64." },
+            "protocol": { "type": "string", "enum": ["line","raw","delimiter","modbus-rtu","hex-frame","slip"] },
+            "count": { "type": "integer", "description": "How many recent frames to return." },
+            "direction": { "type": "string", "enum": ["all","rx","tx"] },
+            "dtr": { "type": "boolean" },
+            "rts": { "type": "boolean" },
+            "break": { "type": "boolean" }
+        },
+        "required": ["action"],
+        "additionalProperties": false
+    })
+}
+
+fn dut_parameters() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["list","connect","disconnect","run","smoke","status"],
+                "description": "Operation to run."
+            },
+            "profile": { "type": "string", "description": "Profile name." },
+            "path": { "type": "string" },
+            "baudRate": { "type": "integer" },
+            "name": { "type": "string", "description": "Command name for action=run." },
+            "includeLowPower": { "type": "boolean" }
+        },
+        "required": ["action"],
+        "additionalProperties": false
+    })
+}
+
+fn view_parameters() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["panel","frames","history","ports"],
+                "description": "Operation to run."
+            },
+            "limit": { "type": "integer" },
+            "offset": { "type": "integer" },
+            "text": { "type": "string" },
+            "hex": { "type": "string" },
+            "direction": { "type": "string", "enum": ["all","rx","tx"] }
+        },
+        "required": ["action"],
+        "additionalProperties": false
+    })
+}
+
 fn tool_schemas() -> Vec<Value> {
     vec![
         json!({
-            "name": "serial_list_ports",
-            "description": "List the serial ports available on this machine.",
-            "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+            "name": "uart_serial",
+            "title": "Serial port",
+            "description": "Serial port control: list ports, open/close, send and read data, modem signals, live encoding/framing changes. Select the operation with `action`.",
+            "inputSchema": serial_parameters()
         }),
         json!({
-            "name": "serial_open",
-            "description": "Open a serial port and return its connection id.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "path": { "type": "string" },
-                    "baudRate": { "type": "number" },
-                    "encoding": { "type": "string" },
-                    "protocol": { "type": "string", "enum": ["line", "raw", "delimiter", "modbus-rtu", "hex-frame", "slip"] }
-                },
-                "required": ["path"],
-                "additionalProperties": false
-            }
+            "name": "uart_dut",
+            "title": "DUT test profiles",
+            "description": "Profile-driven DUT testing: list profiles, connect, run a command or the smoke sequence, and read session status. Select the operation with `action`.",
+            "inputSchema": dut_parameters()
         }),
         json!({
-            "name": "serial_write",
-            "description": "Write data to an open connection.",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "connectionId": { "type": "string" }, "data": { "type": "string" }, "encoding": { "type": "string" } },
-                "required": ["connectionId", "data"],
-                "additionalProperties": false
-            }
-        }),
-        json!({
-            "name": "serial_read",
-            "description": "Read buffered frames from a connection.",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "connectionId": { "type": "string" }, "count": { "type": "number" }, "direction": { "type": "string" } },
-                "required": ["connectionId"],
-                "additionalProperties": false
-            }
-        }),
-        json!({
-            "name": "serial_status",
-            "description": "Report the open connections and their counters.",
-            "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
-        }),
-        json!({
-            "name": "serial_close",
-            "description": "Close a connection.",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "connectionId": { "type": "string" } },
-                "required": ["connectionId"],
-                "additionalProperties": false
-            }
-        }),
-        json!({
-            "name": "serial_set_signals",
-            "description": "Toggle DTR/RTS or pulse BREAK.",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "connectionId": { "type": "string" }, "dtr": { "type": "boolean" }, "rts": { "type": "boolean" }, "break": { "type": "boolean" } },
-                "required": ["connectionId"],
-                "additionalProperties": false
-            }
+            "name": "uart_view",
+            "title": "Serial views",
+            "description": "Read-side view: panel/Hub status, buffered frames, archived history with text/HEX search, and port details. Select the operation with `action`.",
+            "inputSchema": view_parameters()
         }),
     ]
 }
 
-fn call_tool(manager: &Arc<SerialManager>, name: &str, args: &Value) -> Result<String, String> {
+fn call_tool(manager: &Arc<SerialManager>, dut: &Arc<DutManager>, name: &str, args: &Value) -> Result<String, String> {
     match name {
-        "serial_list_ports" => {
+        "uart_serial" => call_serial(manager, args),
+        "uart_dut" => call_dut(dut, args),
+        "uart_view" => call_view(manager, args),
+        // Accept the old flat names too, so any stale caller keeps working.
+        "serial_list_ports" => call_serial(manager, &json!({"action":"list_ports"})),
+        "serial_open" => call_serial(manager, &json!({"action":"open","path":args.get("path").cloned().unwrap_or(Value::Null),"baudRate":args.get("baudRate").cloned().unwrap_or(Value::Null)})),
+        "serial_write" => call_serial(manager, &json!({"action":"write","data":args.get("data").cloned().unwrap_or(Value::Null),"encoding":args.get("encoding").cloned().unwrap_or(Value::Null)})),
+        "serial_read" => call_serial(manager, &json!({"action":"read","count":args.get("count").cloned().unwrap_or(Value::Null)})),
+        "serial_status" => call_serial(manager, &json!({"action":"status"})),
+        "serial_close" => call_serial(manager, &json!({"action":"close"})),
+        "serial_set_signals" => call_serial(manager, &json!({"action":"set_signals","dtr":args.get("dtr").cloned().unwrap_or(Value::Null),"rts":args.get("rts").cloned().unwrap_or(Value::Null),"break":args.get("break").cloned().unwrap_or(Value::Null)})),
+        other => Err(format!("Unknown tool: {other}")),
+    }
+}
+
+fn active_id(manager: &Arc<SerialManager>) -> Result<String, String> {
+    manager
+        .list_connections()
+        .into_iter()
+        .find(|c| c.status == "open")
+        .map(|c| c.id)
+        .ok_or_else(|| "Not connected".into())
+}
+
+fn call_serial(manager: &Arc<SerialManager>, args: &Value) -> Result<String, String> {
+    let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("");
+    match action {
+        "list_ports" => {
             let ports = manager.list_ports();
-            Ok(serde_json::to_string_pretty(&json!({ "ports": ports })).unwrap_or_default())
+            if ports.is_empty() { return Ok("No serial ports found.".into()); }
+            Ok(ports.iter().map(|p| {
+                let mut parts = vec![p.path.clone()];
+                if let Some(m) = &p.manufacturer { parts.push(m.clone()); }
+                if let (Some(v), Some(pr)) = (&p.vendor_id, &p.product_id) { parts.push(format!("{v}:{pr}")); }
+                parts.join("  ")
+            }).collect::<Vec<_>>().join("\n"))
         }
-        "serial_open" => {
+        "open" => {
+            let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            if path.is_empty() { return Err("path is required".into()); }
             let mut config = SerialConfig::default();
-            config.path = args.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            if config.path.is_empty() {
-                return Err("path is required".into());
-            }
-            if let Some(v) = args.get("baudRate").and_then(|v| v.as_u64()) {
-                config.baud_rate = v as u32;
-            }
-            if let Some(v) = args.get("encoding").and_then(|v| v.as_str()) {
-                config.encoding = v.to_string();
-            }
-            if let Some(v) = args.get("protocol").and_then(|v| v.as_str()) {
-                config.protocol = v.to_string();
-            }
+            config.path = path.to_string();
+            if let Some(v) = args.get("baudRate").and_then(|v| v.as_u64()) { config.baud_rate = v as u32; }
+            if let Some(v) = args.get("encoding").and_then(|v| v.as_str()) { config.encoding = v.to_string(); }
+            if let Some(v) = args.get("protocol").and_then(|v| v.as_str()) { config.protocol = v.to_string(); }
             let (id, info) = manager.open(config)?;
             Ok(format!("opened {id} on {} @ {}", info.config.path, info.config.baud_rate))
         }
-        "serial_write" => {
-            let id = args.get("connectionId").and_then(|v| v.as_str()).unwrap_or("");
-            let data = args.get("data").and_then(|v| v.as_str()).unwrap_or("");
-            let encoding = args.get("encoding").and_then(|v| v.as_str());
-            let (written, raw) = manager.write(id, data, encoding)?;
-            Ok(format!("wrote {written} bytes ({raw})"))
-        }
-        "serial_read" => {
-            let id = args.get("connectionId").and_then(|v| v.as_str()).unwrap_or("");
-            let count = args.get("count").and_then(|v| v.as_u64()).map(|v| v as usize);
-            let messages = manager.messages(id, count);
-            Ok(serde_json::to_string_pretty(&json!({ "frames": messages.iter().map(|m| m.to_wire()).collect::<Vec<_>>() })).unwrap_or_default())
-        }
-        "serial_status" => {
-            let connections = manager.list_connections();
-            Ok(serde_json::to_string_pretty(&json!({ "connections": connections })).unwrap_or_default())
-        }
-        "serial_close" => {
-            let id = args.get("connectionId").and_then(|v| v.as_str()).unwrap_or("");
-            manager.close(id)?;
+        "close" => {
+            let id = args.get("connectionId").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_else(|| active_id(manager).unwrap_or_default());
+            manager.close(&id)?;
             Ok(format!("closed {id}"))
         }
-        "serial_set_signals" => {
-            let id = args.get("connectionId").and_then(|v| v.as_str()).unwrap_or("");
-            manager.set_signals(
-                id,
+        "write" => {
+            let id = args.get("connectionId").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_else(|| active_id(manager).unwrap_or_default());
+            let data = args.get("data").and_then(|v| v.as_str()).unwrap_or("");
+            if data.is_empty() { return Err("data is required".into()); }
+            let encoding = args.get("encoding").and_then(|v| v.as_str());
+            let (written, raw) = manager.write(&id, data, encoding)?;
+            Ok(format!("wrote {written} bytes  HEX: {raw}"))
+        }
+        "read" => {
+            let id = args.get("connectionId").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_else(|| active_id(manager).unwrap_or_default());
+            let count = args.get("count").and_then(|v| v.as_u64()).map(|v| v as usize).unwrap_or(50).min(500);
+            let messages = manager.messages(&id, Some(count));
+            if messages.is_empty() { return Ok("No frames buffered.".into()); }
+            Ok(messages.iter().map(frame_line).collect::<Vec<_>>().join("\n"))
+        }
+        "status" => {
+            let connections = manager.list_connections();
+            let active = connections.iter().find(|c| c.status == "open");
+            let mut lines = vec![
+                format!("connections: {}", connections.len()),
+                match active { Some(c) => format!("active: {} @ {} ({})", c.config.path, c.config.baud_rate, c.config.encoding), None => "active: (none)".into() },
+            ];
+            if let Some(c) = active { lines.push(format!("frames: {}", c.message_count)); }
+            Ok(lines.join("\n"))
+        }
+        "set_signals" => {
+            let id = args.get("connectionId").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_else(|| active_id(manager).unwrap_or_default());
+            manager.set_signals(&id,
                 args.get("break").and_then(|v| v.as_bool()),
                 args.get("dtr").and_then(|v| v.as_bool()),
-                args.get("rts").and_then(|v| v.as_bool()),
-            )?;
+                args.get("rts").and_then(|v| v.as_bool()))?;
             Ok("signals applied".into())
         }
-        other => Err(format!("Unknown tool: {other}")),
+        "configure" => {
+            let id = args.get("connectionId").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_else(|| active_id(manager).unwrap_or_default());
+            let mut updates = json!({});
+            if let Some(v) = args.get("encoding") { updates["encoding"] = v.clone(); }
+            if let Some(v) = args.get("protocol") { updates["protocol"] = v.clone(); }
+            if let Some(v) = args.get("baudRate") { updates["baudRate"] = v.clone(); }
+            manager.reconfigure(&id, &updates)?;
+            Ok(format!("reconfigured: {updates}"))
+        }
+        other => Err(format!("Unknown uart_serial action: {other}")),
+    }
+}
+
+fn frame_line(message: &crate::model::SerialMessage) -> String {
+    let time = message.timestamp.get(11..23).unwrap_or(&message.timestamp);
+    let dir = match message.direction { crate::model::Direction::Tx => "TX", crate::model::Direction::Rx => "RX" };
+    let body = match message.direction { crate::model::Direction::Tx => &message.raw, crate::model::Direction::Rx => &message.data };
+    format!("{time} {dir}  {body}")
+}
+
+fn call_view(manager: &Arc<SerialManager>, args: &Value) -> Result<String, String> {
+    let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("");
+    match action {
+        "ports" => {
+            let ports = manager.list_ports();
+            if ports.is_empty() { return Ok("No serial ports found.".into()); }
+            Ok(ports.iter().map(|p| serde_json::to_string(p).unwrap_or_default()).collect::<Vec<_>>().join("\n"))
+        }
+        "panel" => call_serial(manager, &json!({"action":"status"})),
+        "frames" => {
+            let id = args.get("connectionId").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_else(|| active_id(manager).unwrap_or_default());
+            let count = args.get("limit").and_then(|v| v.as_u64()).map(|v| v as usize).unwrap_or(50).min(500);
+            let messages = manager.messages(&id, Some(count));
+            if messages.is_empty() { return Ok("No frames buffered.".into()); }
+            Ok(messages.iter().map(frame_line).collect::<Vec<_>>().join("\n"))
+        }
+        "history" => {
+            // The Hub owns the cross-reconnect archive; MCP stdio has its own
+            // SerialManager with no Hub, so report the live buffer instead.
+            let id = args.get("connectionId").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_else(|| active_id(manager).unwrap_or_default());
+            let count = args.get("limit").and_then(|v| v.as_u64()).map(|v| v as usize).unwrap_or(50).min(500);
+            let messages = manager.messages(&id, Some(count));
+            if messages.is_empty() { return Ok("No frames buffered.".into()); }
+            Ok(messages.iter().map(frame_line).collect::<Vec<_>>().join("\n"))
+        }
+        other => Err(format!("Unknown uart_view action: {other}")),
+    }
+}
+
+fn call_dut(dut: &Arc<DutManager>, args: &Value) -> Result<String, String> {
+    let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("");
+    match action {
+        "list" => {
+            let profiles = dut.profiles();
+            if profiles.is_empty() { return Ok("No DUT profiles installed.".into()); }
+            Ok(profiles.iter().map(|p| {
+                let name = p.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let desc = p.get("description").and_then(|v| v.as_str()).unwrap_or("");
+                let cmds = p.get("commands").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|c| c.get("name").and_then(|v| v.as_str())).collect::<Vec<_>>().join(", ")).unwrap_or_default();
+                format!("{name}: {desc}\n  commands: {cmds}")
+            }).collect::<Vec<_>>().join("\n\n"))
+        }
+        "connect" => {
+            let profile = args.get("profile").and_then(|v| v.as_str()).ok_or("profile is required")?;
+            let path = args.get("path").and_then(|v| v.as_str());
+            let baud = args.get("baudRate").and_then(|v| v.as_u64()).map(|v| v as u32);
+            let (id, opened) = dut.connect(profile, path, baud, None)?;
+            Ok(format!("DUT {profile} connected to {id}{}", if opened { " (port opened)" } else { " (attached)" }))
+        }
+        "disconnect" => {
+            let id = dut.status(None).get("connectionId").and_then(|v| v.as_str()).map(|s| s.to_string());
+            dut.disconnect(id, false)?;
+            Ok("DUT session closed".into())
+        }
+        "status" => {
+            let s = dut.status(None);
+            Ok(format!("profile: {}\nconnected: {}\nbusy: {}",
+                s.get("profile").and_then(|v| v.as_str()).unwrap_or("(none)"),
+                s.get("connected").and_then(|v| v.as_bool()).unwrap_or(false),
+                s.get("busy").and_then(|v| v.as_bool()).unwrap_or(false)))
+        }
+        "run" => {
+            let name = args.get("name").and_then(|v| v.as_str()).ok_or("name is required")?;
+            let id = dut.status(None).get("connectionId").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let r = dut.run_command(id, name)?;
+            let mut lines = vec![format!("[{}] {} — {} ({}ms)", r.verdict, r.command, r.title, r.elapsed_ms)];
+            if !r.failed_checks.is_empty() { lines.push(format!("failed: {}", r.failed_checks.join("; "))); }
+            if !r.frames.is_empty() {
+                let rx = r.frames.iter().map(|f| f.bytes.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(" ")).collect::<Vec<_>>().join(" | ");
+                lines.push(format!("rx: {rx}"));
+            }
+            Ok(lines.join("\n"))
+        }
+        "smoke" => {
+            let id = dut.status(None).get("connectionId").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let low = args.get("includeLowPower").and_then(|v| v.as_bool()).unwrap_or(false);
+            let result = dut.run_smoke(id, low, &|_event: DutEvent| {})?;
+            let steps = result.get("steps").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            let head = format!("PASS {} · FAIL {} · REPORT {} ({}ms)",
+                result.get("passed").and_then(|v| v.as_u64()).unwrap_or(0),
+                result.get("failed").and_then(|v| v.as_u64()).unwrap_or(0),
+                result.get("report").and_then(|v| v.as_u64()).unwrap_or(0),
+                result.get("elapsedMs").and_then(|v| v.as_u64()).unwrap_or(0));
+            let body = steps.iter().map(|s| {
+                let verdict = s.get("verdict").and_then(|v| v.as_str()).unwrap_or("");
+                let cmd = s.get("command").and_then(|v| v.as_str()).unwrap_or("");
+                let title = s.get("title").and_then(|v| v.as_str()).unwrap_or("");
+                let ms = s.get("elapsedMs").and_then(|v| v.as_u64()).unwrap_or(0);
+                format!("[{verdict}] {cmd} — {title} ({ms}ms)")
+            }).collect::<Vec<_>>().join("\n");
+            Ok(format!("{head}\n{body}"))
+        }
+        other => Err(format!("Unknown uart_dut action: {other}")),
     }
 }

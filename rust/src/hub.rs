@@ -15,12 +15,14 @@ use std::thread;
 use serde_json::{json, Value};
 use tiny_http::{Header, Method, Response, Server, StatusCode};
 
+use crate::dut::{DutEvent, DutManager};
 use crate::model::SerialConfig;
 use crate::serial::SerialManager;
 use crate::util::{json_error, now_iso};
 
 pub struct HubState {
     pub manager: Arc<SerialManager>,
+    pub dut: Arc<DutManager>,
     pub active: Mutex<Option<String>>,
     pub owns_port: Mutex<bool>,
     pub frames: Mutex<VecDeque<Value>>,
@@ -33,9 +35,11 @@ pub struct HubState {
 }
 
 impl HubState {
-    pub fn new(manager: Arc<SerialManager>) -> Arc<Self> {
+    pub fn new(manager: Arc<SerialManager>, profiles_dir: &std::path::Path) -> Arc<Self> {
+        let dut = DutManager::new(manager.clone(), profiles_dir);
         let state = Arc::new(Self {
             manager: manager.clone(),
+            dut,
             active: Mutex::new(None),
             owns_port: Mutex::new(false),
             frames: Mutex::new(VecDeque::new()),
@@ -93,6 +97,27 @@ impl HubState {
         self.sse.lock().unwrap().push(tx);
         rx
     }
+
+    /// Broadcast an `event: dut` block to every SSE client, matching the Node
+    /// Hub's `broadcast("dut", event, connectionId)`.
+    fn broadcast_dut(&self, event: &DutEvent, connection_id: Option<&str>) {
+        let payload = match event {
+            DutEvent::SmokeStart { profile, total } => json!({
+                "kind": "smoke-start", "profile": profile, "total": total
+            }),
+            DutEvent::SmokeStep { index, total, step } => json!({
+                "kind": "smoke-step", "index": index, "total": total, "step": step
+            }),
+            DutEvent::SmokeDone { pass, fail, report, elapsed_ms } => json!({
+                "kind": "smoke-done", "pass": pass, "fail": fail, "report": report,
+                "elapsedMs": elapsed_ms
+            }),
+        };
+        let block = format!("event: dut\ndata: {}\n\n", payload);
+        let mut subs = self.sse.lock().unwrap();
+        subs.retain(|tx| tx.send(block.clone()).is_ok());
+        let _ = connection_id; // panel filters by active connection on the client
+    }
 }
 
 /// Blocking reader that turns SSE channel messages into a response body.
@@ -145,11 +170,131 @@ pub fn serve(state: Arc<HubState>, addr: &str) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Summary of the Hub's active connection, matching Node's `activeSummary()`.
+fn active_summary(state: &HubState) -> Value {
+    let Some(id) = state.active.lock().unwrap().clone() else { return Value::Null; };
+    let connections = state.manager.list_connections();
+    match connections.iter().find(|c| c.id == id) {
+        Some(info) => json!({
+            "connectionId": id,
+            "port": info.config.path,
+            "baudRate": info.config.baud_rate,
+        }),
+        None => Value::Null,
+    }
+}
+
+/// `/api/dut` and `/api/dut/*` — route-for-route compatible with the Node Hub.
+fn handle_dut(
+    state: Arc<HubState>,
+    mut request: tiny_http::Request,
+    method: &Method,
+    path: &str,
+) -> std::io::Result<()> {
+    let active = state.active.lock().unwrap().clone();
+
+    if *method == Method::Get && path == "/api/dut" {
+        return respond_json(request, 200, json!({
+            "ok": true,
+            "available": true,
+            "profiles": state.dut.profiles(),
+            "status": state.dut.status(active),
+            "active": active_summary(&state),
+        }));
+    }
+    if *method == Method::Get && path == "/api/dut/status" {
+        return respond_json(request, 200, json!({
+            "ok": true,
+            "available": true,
+            "status": state.dut.status(active),
+            "active": active_summary(&state),
+        }));
+    }
+    if *method == Method::Post && path == "/api/dut/connect" {
+        let body = match read_json(&mut request) {
+            Ok(v) => v, Err(e) => return respond_json(request, 400, json_error(e)),
+        };
+        let profile = body.get("profile").and_then(|v| v.as_str()).unwrap_or("");
+        if profile.is_empty() { return respond_json(request, 400, json_error("profile is required")); }
+        let path_arg = body.get("path").and_then(|v| v.as_str());
+        let baud = body.get("baudRate").and_then(|v| v.as_u64()).map(|v| v as u32);
+        let conn = body.get("connectionId").and_then(|v| v.as_str()).map(|s| s.to_string()).or(active);
+        match state.dut.connect(profile, path_arg, baud, conn) {
+            Ok((id, opened)) => {
+                // Only adopt as the Hub's active connection if it changed.
+                let is_active = *state.active.lock().unwrap() == Some(id.clone());
+                if !is_active {
+                    *state.active.lock().unwrap() = Some(id.clone());
+                    *state.owns_port.lock().unwrap() = opened;
+                }
+                respond_json(request, 200, json!({
+                    "ok": true,
+                    "connectionId": id,
+                    "opened": opened,
+                    "status": state.dut.status(Some(id)),
+                    "active": active_summary(&state),
+                }))
+            }
+            Err(e) => respond_json(request, 500, json_error(e)),
+        }
+    } else if *method == Method::Post && path == "/api/dut/disconnect" {
+        let close_port = false; // Rust Hub owns the port; detach session only.
+        match state.dut.disconnect(active.clone(), close_port) {
+            Ok(()) => respond_json(request, 200, json!({
+                "ok": true,
+                "status": state.dut.status(None),
+                "active": active_summary(&state),
+            })),
+            Err(e) => respond_json(request, 500, json_error(e)),
+        }
+    } else if *method == Method::Post && path == "/api/dut/run" {
+        let body = match read_json(&mut request) {
+            Ok(v) => v, Err(e) => return respond_json(request, 400, json_error(e)),
+        };
+        let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        if name.is_empty() { return respond_json(request, 400, json_error("name is required")); }
+        if !state.dut.status(active.clone()).get("connected").and_then(|v| v.as_bool()).unwrap_or(false) {
+            return respond_json(request, 409, json_error("No DUT session. Connect a profile first."));
+        }
+        if state.dut.busy() {
+            return respond_json(request, 409, json_error("A smoke run is already in progress"));
+        }
+        match state.dut.run_command(active.clone(), name) {
+            Ok(result) => respond_json(request, 200, json!({ "ok": true, "result": result })),
+            Err(e) => respond_json(request, 500, json_error(e)),
+        }
+    } else if *method == Method::Post && path == "/api/dut/smoke" {
+        let body = match read_json(&mut request) {
+            Ok(v) => v, Err(e) => return respond_json(request, 400, json_error(e)),
+        };
+        if !state.dut.status(active.clone()).get("connected").and_then(|v| v.as_bool()).unwrap_or(false) {
+            return respond_json(request, 409, json_error("No DUT session. Connect a profile first."));
+        }
+        if state.dut.busy() {
+            return respond_json(request, 409, json_error("A smoke run is already in progress"));
+        }
+        let low = body.get("includeLowPower").and_then(|v| v.as_bool()).unwrap_or(false);
+        let conn = active.clone();
+        let emit = |event: DutEvent| state.broadcast_dut(&event, conn.as_deref());
+        match state.dut.run_smoke(active.clone(), low, &emit) {
+            Ok(result) => respond_json(request, 200, json!({ "ok": true, "result": result })),
+            Err(e) => respond_json(request, 500, json_error(e)),
+        }
+    } else {
+        respond_json(request, 404, json_error(format!("Not found: {method} {path}")))
+    }
+}
+
 fn handle(state: Arc<HubState>, mut request: tiny_http::Request) -> std::io::Result<()> {
     let url = request.url().to_string();
     let path = url.split('?').next().unwrap_or("/").to_string();
     let query = url.split('?').nth(1).unwrap_or("").to_string();
     let method = request.method().clone();
+
+    // DUT routes use a path prefix; handle them before the exact-match table.
+    if path == "/api/dut" || path.starts_with("/api/dut/") {
+        return handle_dut(state, request, &method, &path);
+    }
 
     match (method, path.as_str()) {
         (Method::Get, "/api/health") => {
@@ -166,10 +311,10 @@ fn handle(state: Arc<HubState>, mut request: tiny_http::Request) -> std::io::Res
                     "ownsPort": owns,
                     "frameCount": frames,
                     "seq": seq,
-                    "dut": false,
+                    "dut": true,
                     "pid": std::process::id(),
                     "startedAt": state.started_at.clone(),
-                    "features": { "history": true, "dut": false },
+                    "features": { "history": true, "dut": true },
                 }),
             )
         }
