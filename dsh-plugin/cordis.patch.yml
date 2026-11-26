@@ -4,7 +4,7 @@
 # 行 2 local-uart-tools name 指向包的 ./tools 子路径：三个分组工具
 #                       行标题由 DSH 用「包名/子路径」生成，无法本地化
 #
-# 外部（非 DSH）用户仍用 node dist/index.js，那是独立进程，与本 bundle 无关。
+# 外部（非 DSH）用户用 mcp-uart（原生 uartd daemon），那是独立进程，与本 bundle 无关。
 - insert:
     - id: local-uart
       name: '@local/dsh-uart'

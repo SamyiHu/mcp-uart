@@ -44,8 +44,8 @@
 DSH 内一致（`uart_serial` / `uart_orchestrator` / `uart_view`）：
 
 ```bash
-node dist/index.js               # MCP 服务器，Hub 随进程启动，stderr 打印地址
-npx mcp-uart-hub --port 8787     # 只起 Web 界面
+mcp-uart                         # MCP 服务器（原生 uartd），stderr 打印地址
+npx mcp-uart-hub --port 8787     # 只起 Web Hub（原生 uartd）
 ```
 
 浏览器打开打印出的地址即可，功能和面板一致。

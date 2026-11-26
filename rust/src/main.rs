@@ -15,6 +15,7 @@ mod encoding;
 mod framing;
 mod hub;
 mod mcp;
+mod mcp_extra;
 mod model;
 mod serial;
 mod util;

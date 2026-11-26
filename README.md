@@ -44,8 +44,8 @@ dsh-plugin/
   cordis.patch.yml     two rows (`./` and `./tools`)
 ```
 
-External (non-DSH) users get the standard MCP surface: `node dist/index.js` is a
-full MCP server with the same three grouped tools
+External (non-DSH) users get the standard MCP surface: `mcp-uart` (the native Rust
+uartd daemon) is a full MCP server with the same three grouped tools
 (`uart_serial` / `uart_orchestrator` / `uart_view`), independent of this bundle.
 See `dsh-plugin/DESIGN-dual-mode-tools.md` for the design and its verification.
 
@@ -69,8 +69,8 @@ Without DSH nothing changes: the same API and the same browser UI run on the Hub
 port, so a plain browser, Claude Code, or any MCP client keeps working:
 
 ```bash
-node dist/index.js          # MCP server + in-process Hub (prints its URL)
-npx mcp-uart-hub            # standalone Hub only
+mcp-uart                    # MCP server (native Rust daemon)
+npx mcp-uart-hub            # standalone Hub only (native Rust daemon)
 ```
 
 Both front ends are pinned by one contract suite:
@@ -154,8 +154,8 @@ If running from a local clone instead of `npm install -g`:
 {
   "mcpServers": {
     "uart": {
-      "command": "node",
-      "args": ["/absolute/path/to/mcp-uart/dist/index.js"]
+      "command": "mcp-uart",
+      "args": []
     }
   }
 }
@@ -239,7 +239,7 @@ Type and press Enter to send. `Ctrl+C` to exit.
 ```bash
 # Preferred workflow — MCP starts Hub UI automatically (stderr prints URL)
 # Default http://127.0.0.1:8787 (auto-shifts if busy)
-UART_HUB=1 node dist/index.js   # or just start via your MCP client
+UART_HUB=1 mcp-uart              # or just start via your MCP client
 
 # Standalone Hub only (no MCP): npm run hub
 # Disable embedded Hub: UART_HUB=0

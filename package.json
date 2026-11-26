@@ -2,18 +2,18 @@
   "name": "mcp-uart",
   "version": "1.5.0",
   "description": "Serial Port MCP Server for AI agents — structured tools, orchestrator_sequence orchestrator, Hub UI, profile-driven Orchestrator runner",
-  "main": "dist/index.js",
+  "main": "bin/mcp-uart.mjs",
   "type": "module",
   "bin": {
-    "mcp-uart": "dist/index.js",
-    "serial-monitor": "dist/monitor.js",
-    "mcp-uart-hub": "dist/hub.js"
+    "mcp-uart": "bin/mcp-uart.mjs",
+    "mcp-uart-hub": "bin/mcp-uart-hub.mjs",
+    "serial-monitor": "bin/mcp-uart.mjs"
   },
   "scripts": {
     "build": "tsc && node scripts/copy-assets.mjs && node scripts/build-dsh-client.mjs",
     "build:dsh": "node scripts/build-dsh-client.mjs",
-    "start": "node dist/index.js",
-    "hub": "node dist/hub.js",
+    "start": "node bin/mcp-uart.mjs",
+    "hub": "node bin/mcp-uart-hub.mjs",
     "dev": "tsc --watch",
     "prepare": "npm run build",
     "test:orchestrator": "node test/orchestrator-offline-test.mjs",
@@ -30,12 +30,16 @@
     "test": "npm run test:orchestrator && npm run test:extract && npm run test:hub && npm run test:hub-orchestrator && npm run test:sequence && npm run test:encoding && npm run test:framing && npm run test:payload && npm run test:history && npm run test:perf && npm run test:takeover && npm run test:dsh && npm run test:dsh-tools && npm run test:orchestrator-rust",
     "test:dsh-tools": "node test/dsh-agent-tools-test.mjs",
     "test:takeover": "node test/hub-takeover-test.mjs",
-    "test:orchestrator-rust": "node test/orchestrator-rust-test.mjs"
+    "test:orchestrator-rust": "node test/orchestrator-rust-test.mjs",
+    "build:rust": "cargo build --release --manifest-path rust/Cargo.toml",
+    "prebuild:rust": "node scripts/ensure-uartd.mjs > /dev/null"
   },
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "bin",
+    "scripts/ensure-uartd.mjs"
   ],
   "keywords": [
     "mcp",

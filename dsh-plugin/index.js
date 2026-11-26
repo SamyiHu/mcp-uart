@@ -9,7 +9,7 @@
  *      `uart_view`) — three grouped tools instead of the MCP server's 28;
  *   4. exposes `/uart/agent` so the settings page can switch those tools on/off.
  *
- * External users are unaffected: they run `node dist/index.js` (or `mcp-uart`)
+ * External users are unaffected: they run `mcp-uart` (the native uartd daemon)
  * against any MCP client and get the full 28-tool surface. This plugin never
  * mounts the MCP client row, so DSH sessions see no `mcp__uart__*` tools at all.
  *

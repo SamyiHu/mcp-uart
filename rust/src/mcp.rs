@@ -9,13 +9,25 @@
 //! a line-oriented loop.
 
 use std::io::{BufRead, Write};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+use std::collections::HashMap;
 
 use serde_json::{json, Value};
 
 use crate::orchestrator::{OrchestratorEvent, OrchestratorManager};
 use crate::model::SerialConfig;
 use crate::serial::SerialManager;
+
+/// A running file-log monitor, keyed by connection id.
+struct MonitorEntry {
+    log_path: String,
+    started: Instant,
+    count: Arc<AtomicU64>,
+    stop: Arc<AtomicBool>,
+}
+type Monitors = Arc<Mutex<HashMap<String, MonitorEntry>>>;
 
 pub fn serve(manager: Arc<SerialManager>) -> std::io::Result<()> {
     // MCP stdio has its own serial stack (and its own Orchestrator sessions) — it is a
@@ -27,6 +39,7 @@ pub fn serve(manager: Arc<SerialManager>) -> std::io::Result<()> {
         .join("orchestrator")
         .join("profiles");
     let orchestrator = OrchestratorManager::new(manager.clone(), &profiles_dir);
+    let monitors: Monitors = Arc::new(Mutex::new(HashMap::new()));
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
 
@@ -66,7 +79,7 @@ pub fn serve(manager: Arc<SerialManager>) -> std::io::Result<()> {
             "tools/call" => {
                 let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
                 let args = params.get("arguments").cloned().unwrap_or(json!({}));
-                match call_tool(&manager, &orchestrator, name, &args) {
+                match call_tool(&manager, &orchestrator, &monitors, name, &args) {
                     Ok(text) => Some(json!({
                         "jsonrpc": "2.0",
                         "id": id,
@@ -103,7 +116,7 @@ fn serial_parameters() -> Value {
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["list_ports","open","close","write","read","capture","status","set_signals","configure"],
+                "enum": ["list_ports","open","close","write","read","capture","extract","wait","wait_frame","start_monitor","stop_monitor","status","reconfigure","list_encodings","list_protocols","set_signals","configure"],
                 "description": "Operation to run."
             },
             "path": { "type": "string", "description": "Serial port, e.g. COM6 or /dev/ttyUSB0." },
@@ -122,7 +135,12 @@ fn serial_parameters() -> Value {
             "filter": { "type": "object", "description": "capture: direction/matchHex/matchText/minLength/maxLength." },
             "stop": { "type": "object", "description": "capture: bytes/frames/untilHex/untilText conditions (first match wins)." },
             "startHex": { "type": "string", "description": "capture: drop frames before this HEX marker." },
-            "includeTx": { "type": "boolean", "description": "capture: include TX frames (default false)." }
+            "includeTx": { "type": "boolean", "description": "capture: include TX frames (default false)." },
+            "path_spec": { "type": "string", "description": "extract: field path, e.g. last.raw / rxHex / messages[-1].data." },
+            "logPath": { "type": "string", "description": "start_monitor: output log path." },
+            "matchHex": { "type": "string", "description": "wait/wait_frame: keep frames whose raw hex contains this." },
+            "matchText": { "type": "string", "description": "wait/wait_frame: keep frames whose text contains this." },
+            "timeout": { "type": "integer", "description": "wait_frame: timeout in ms (default 5000)." }
         },
         "required": ["action"],
         "additionalProperties": false
@@ -157,14 +175,16 @@ fn view_parameters() -> Value {
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["panel","frames","history","ports"],
+                "enum": ["panel","frames","history","ports","visualize","visualize_smoke"],
                 "description": "Operation to run."
             },
             "limit": { "type": "integer" },
             "offset": { "type": "integer" },
             "text": { "type": "string" },
             "hex": { "type": "string" },
-            "direction": { "type": "string", "enum": ["all","rx","tx"] }
+            "direction": { "type": "string", "enum": ["all","rx","tx"] },
+            "outputPath": { "type": "string", "description": "visualize: output .html path." },
+            "title": { "type": "string", "description": "visualize: report title." }
         },
         "required": ["action"],
         "additionalProperties": false
@@ -194,19 +214,19 @@ fn tool_schemas() -> Vec<Value> {
     ]
 }
 
-fn call_tool(manager: &Arc<SerialManager>, orchestrator: &Arc<OrchestratorManager>, name: &str, args: &Value) -> Result<String, String> {
+fn call_tool(manager: &Arc<SerialManager>, orchestrator: &Arc<OrchestratorManager>, monitors: &Monitors, name: &str, args: &Value) -> Result<String, String> {
     match name {
-        "uart_serial" => call_serial(manager, args),
+        "uart_serial" => call_serial(manager, monitors, args),
         "uart_orchestrator" => call_orchestrator(orchestrator, args),
-        "uart_view" => call_view(manager, args),
+        "uart_view" => call_view(manager, monitors, args),
         // Accept the old flat names too, so any stale caller keeps working.
-        "serial_list_ports" => call_serial(manager, &json!({"action":"list_ports"})),
-        "serial_open" => call_serial(manager, &json!({"action":"open","path":args.get("path").cloned().unwrap_or(Value::Null),"baudRate":args.get("baudRate").cloned().unwrap_or(Value::Null)})),
-        "serial_write" => call_serial(manager, &json!({"action":"write","data":args.get("data").cloned().unwrap_or(Value::Null),"encoding":args.get("encoding").cloned().unwrap_or(Value::Null)})),
-        "serial_read" => call_serial(manager, &json!({"action":"read","count":args.get("count").cloned().unwrap_or(Value::Null)})),
-        "serial_status" => call_serial(manager, &json!({"action":"status"})),
-        "serial_close" => call_serial(manager, &json!({"action":"close"})),
-        "serial_set_signals" => call_serial(manager, &json!({"action":"set_signals","dtr":args.get("dtr").cloned().unwrap_or(Value::Null),"rts":args.get("rts").cloned().unwrap_or(Value::Null),"break":args.get("break").cloned().unwrap_or(Value::Null)})),
+        "serial_list_ports" => call_serial(manager, monitors, &json!({"action":"list_ports"})),
+        "serial_open" => call_serial(manager, monitors, &json!({"action":"open","path":args.get("path").cloned().unwrap_or(Value::Null),"baudRate":args.get("baudRate").cloned().unwrap_or(Value::Null)})),
+        "serial_write" => call_serial(manager, monitors, &json!({"action":"write","data":args.get("data").cloned().unwrap_or(Value::Null),"encoding":args.get("encoding").cloned().unwrap_or(Value::Null)})),
+        "serial_read" => call_serial(manager, monitors, &json!({"action":"read","count":args.get("count").cloned().unwrap_or(Value::Null)})),
+        "serial_status" => call_serial(manager, monitors, &json!({"action":"status"})),
+        "serial_close" => call_serial(manager, monitors, &json!({"action":"close"})),
+        "serial_set_signals" => call_serial(manager, monitors, &json!({"action":"set_signals","dtr":args.get("dtr").cloned().unwrap_or(Value::Null),"rts":args.get("rts").cloned().unwrap_or(Value::Null),"break":args.get("break").cloned().unwrap_or(Value::Null)})),
         other => Err(format!("Unknown tool: {other}")),
     }
 }
@@ -220,7 +240,7 @@ fn active_id(manager: &Arc<SerialManager>) -> Result<String, String> {
         .ok_or_else(|| "Not connected".into())
 }
 
-fn call_serial(manager: &Arc<SerialManager>, args: &Value) -> Result<String, String> {
+fn call_serial(manager: &Arc<SerialManager>, monitors: &Monitors, args: &Value) -> Result<String, String> {
     let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("");
     match action {
         "list_ports" => {
@@ -281,6 +301,116 @@ fn call_serial(manager: &Arc<SerialManager>, args: &Value) -> Result<String, Str
             let result = crate::capture::capture(manager, &id, &params)?;
             Ok(format_capture(&result))
         }
+        "extract" => {
+            let id = args.get("connectionId").and_then(|v| v.as_str()).map(|s| s.to_string())
+                .unwrap_or_else(|| active_id(manager).unwrap_or_default());
+            let path = args.get("path_spec").or_else(|| args.get("path"))
+                .and_then(|v| v.as_str()).ok_or("path is required")?;
+            let mut messages = manager.messages(&id, None);
+            // sinceLastRead is handled by the caller via read cursor; here we
+            // simply extract from the live buffer (the Node cursor is per-tool).
+            if let Some(dir) = args.get("direction").and_then(|v| v.as_str()) {
+                if dir != "all" {
+                    let want = if dir == "tx" { crate::model::Direction::Tx } else { crate::model::Direction::Rx };
+                    messages.retain(|m| m.direction == want);
+                }
+            }
+            let value = crate::mcp_extra::extract(&messages, path)?;
+            Ok(format!("{path} = {value}"))
+        }
+        "wait" | "wait_frame" => {
+            let id = match args.get("connectionId").and_then(|v| v.as_str()) {
+                Some(s) => s.to_string(), None => active_id(manager)?,
+            };
+            let timeout = args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(5000);
+            let silence = args.get("silenceTimeout").and_then(|v| v.as_u64()).unwrap_or(500).min(timeout);
+            let mut stop = json!({});
+            if action == "wait_frame" { stop["frames"] = json!(1); }
+            let mut params = json!({
+                "timeoutMs": timeout,
+                "stop": stop,
+            });
+            if action == "wait" { params["silenceMs"] = json!(silence); }
+            if let Some(v) = args.get("matchHex") { params["filter"] = json!({"matchHex": v}); }
+            if let Some(v) = args.get("matchText") { params["filter"] = json!({"matchText": v}); }
+            let result = crate::capture::capture(manager, &id, &params)?;
+            Ok(format_capture(&result))
+        }
+        "start_monitor" => {
+            let id = match args.get("connectionId").and_then(|v| v.as_str()) {
+                Some(s) => s.to_string(), None => active_id(manager)?,
+            };
+            let mut guards = monitors.lock().unwrap();
+            if guards.contains_key(&id) { return Err("Monitor already running; stop it first".into()); }
+            let log_path = args.get("logPath").and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("serial_{}_{}.log", id, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()));
+            let file = std::fs::OpenOptions::new().create(true).append(true).open(&log_path)
+                .map_err(|e| format!("cannot open log: {e}"))?;
+            let stop = Arc::new(AtomicBool::new(false));
+            let count = Arc::new(AtomicU64::new(0));
+            // Header.
+            {
+                let mut f = &file;
+                let _ = writeln!(f, "=== Serial Monitor Started ===");
+                let _ = writeln!(f, "Connection: {id}");
+                let _ = writeln!(f, "Time: {}", crate::util::now_iso());
+            }
+            let sub = manager.subscribe();
+            let sid = id.clone();
+            let sstop = Arc::clone(&stop);
+            let scount = Arc::clone(&count);
+            std::thread::spawn(move || {
+                let mut file = file;
+                let rx = sub.0;
+                while !sstop.load(Ordering::Relaxed) {
+                    match rx.recv_timeout(std::time::Duration::from_millis(200)) {
+                        Ok((wire_id, msg)) if wire_id == sid => {
+                            let dir = match msg.direction { crate::model::Direction::Rx => "RX", crate::model::Direction::Tx => "TX" };
+                            let _ = writeln!(file, "{} {} {} {}", msg.timestamp, dir, msg.raw, msg.data);
+                            let _ = file.flush();
+                            scount.fetch_add(1, Ordering::Relaxed);
+                        }
+                        Ok(_) => {}
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                    }
+                }
+                let _ = writeln!(file, "=== Monitor Stopped ===");
+            });
+            guards.insert(id.clone(), MonitorEntry {
+                log_path: log_path.clone(), started: Instant::now(), count, stop,
+            });
+            Ok(format!("Monitor log: {log_path}\nStop with action=stop_monitor."))
+        }
+        "stop_monitor" => {
+            let id = match args.get("connectionId").and_then(|v| v.as_str()) {
+                Some(s) => s.to_string(), None => active_id(manager)?,
+            };
+            let mut guards = monitors.lock().unwrap();
+            let entry = guards.remove(&id).ok_or("No monitor running for this connection")?;
+            entry.stop.store(true, Ordering::Relaxed);
+            Ok(format!("Monitor stopped: {} ({} messages, {}ms)",
+                entry.log_path, entry.count.load(Ordering::Relaxed), entry.started.elapsed().as_millis()))
+        }
+        "list_encodings" => {
+            let encs = crate::mcp_extra::list_encodings();
+            Ok(encs.iter().map(|e| format!("  {:<12} — {}", e["name"].as_str().unwrap_or(""), e["description"].as_str().unwrap_or(""))).collect::<Vec<_>>().join("\n"))
+        }
+        "list_protocols" => {
+            let protos = crate::mcp_extra::list_protocols();
+            Ok(protos.iter().map(|p| format!("  {:<14} — {}", p["name"].as_str().unwrap_or(""), p["description"].as_str().unwrap_or(""))).collect::<Vec<_>>().join("\n"))
+        }
+        "reconfigure" => {
+            let id = args.get("connectionId").and_then(|v| v.as_str()).map(|s| s.to_string())
+                .unwrap_or_else(|| active_id(manager).unwrap_or_default());
+            let mut updates = json!({});
+            if let Some(v) = args.get("encoding") { updates["encoding"] = v.clone(); }
+            if let Some(v) = args.get("protocol") { updates["protocol"] = v.clone(); }
+            if let Some(v) = args.get("baudRate") { updates["baudRate"] = v.clone(); }
+            manager.reconfigure(&id, &updates)?;
+            Ok(format!("reconfigured: {updates}"))
+        }
         "status" => {
             let connections = manager.list_connections();
             let active = connections.iter().find(|c| c.status == "open");
@@ -335,7 +465,7 @@ fn format_capture(result: &Value) -> String {
     format!("captured {count} frame(s), {bytes}B in {elapsed}ms (reason={reason})\n{lines}")
 }
 
-fn call_view(manager: &Arc<SerialManager>, args: &Value) -> Result<String, String> {
+fn call_view(manager: &Arc<SerialManager>, _monitors: &Monitors, args: &Value) -> Result<String, String> {
     let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("");
     match action {
         "ports" => {
@@ -343,7 +473,7 @@ fn call_view(manager: &Arc<SerialManager>, args: &Value) -> Result<String, Strin
             if ports.is_empty() { return Ok("No serial ports found.".into()); }
             Ok(ports.iter().map(|p| serde_json::to_string(p).unwrap_or_default()).collect::<Vec<_>>().join("\n"))
         }
-        "panel" => call_serial(manager, &json!({"action":"status"})),
+        "panel" => call_serial(manager, _monitors, &json!({"action":"status"})),
         "frames" => {
             let id = args.get("connectionId").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_else(|| active_id(manager).unwrap_or_default());
             let count = args.get("limit").and_then(|v| v.as_u64()).map(|v| v as usize).unwrap_or(50).min(500);
@@ -359,6 +489,45 @@ fn call_view(manager: &Arc<SerialManager>, args: &Value) -> Result<String, Strin
             let messages = manager.messages(&id, Some(count));
             if messages.is_empty() { return Ok("No frames buffered.".into()); }
             Ok(messages.iter().map(frame_line).collect::<Vec<_>>().join("\n"))
+        }
+        "visualize" => {
+            let id = args.get("connectionId").and_then(|v| v.as_str()).map(|s| s.to_string())
+                .unwrap_or_else(|| active_id(manager).unwrap_or_default());
+            let count = args.get("count").or_else(|| args.get("limit"))
+                .and_then(|v| v.as_u64()).map(|v| v as usize).unwrap_or(200).min(2000);
+            let mut messages = manager.messages(&id, Some(count));
+            if let Some(dir) = args.get("direction").and_then(|v| v.as_str()) {
+                if dir != "all" {
+                    let want = if dir == "tx" { crate::model::Direction::Tx } else { crate::model::Direction::Rx };
+                    messages.retain(|m| m.direction == want);
+                }
+            }
+            let title = args.get("title").and_then(|v| v.as_str()).unwrap_or("Serial timeline");
+            let meta = format!("{} frames", messages.len());
+            let html = crate::mcp_extra::render_timeline_html(title, &meta, &messages);
+            let out = args.get("outputPath").and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("serial_viz_{}_{}.html", id,
+                    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()));
+            let path = crate::mcp_extra::write_report(&out, &html)?;
+            Ok(format!("Timeline written ({} frames):\n  {path}\nOpen in a browser.", messages.len()))
+        }
+        "visualize_smoke" => {
+            // The MCP stdio process has the Orchestrator manager; call it via a
+            // fresh report. `args.result` may carry a prior smoke result; else
+            // run the smoke sequence now.
+            let title = args.get("title").and_then(|v| v.as_str()).unwrap_or("Orchestrator smoke report");
+            let result = match args.get("result") {
+                Some(r) => r.clone(),
+                None => return Err("visualize_smoke requires result (run smoke first)".into()),
+            };
+            let html = crate::mcp_extra::render_smoke_html(title, &result);
+            let out = args.get("outputPath").and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("orchestrator_smoke_{}.html",
+                    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()));
+            let path = crate::mcp_extra::write_report(&out, &html)?;
+            Ok(format!("Smoke report written:\n  {path}\nOpen in a browser."))
         }
         other => Err(format!("Unknown uart_view action: {other}")),
     }
