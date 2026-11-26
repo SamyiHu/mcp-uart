@@ -1,29 +1,29 @@
 /**
- * DUT session manager + generic judge. Chip knowledge lives only in the
+ * Orchestrator session manager + generic judge. Chip knowledge lives only in the
  * loaded profile; everything here works for any profile.
  */
 import type { SerialManager } from "../serial-manager.js";
-import type { DutAction, DutCommandDef, DutProfile, DutRunResult, DutSequenceOptions, DutSequenceResult } from "./types.js";
-import { DutSession, num } from "./session.js";
+import type { OrchestratorAction, OrchestratorCommandDef, OrchestratorProfile, OrchestratorRunResult, OrchestratorSequenceOptions, OrchestratorSequenceResult } from "./types.js";
+import { OrchestratorSession, num } from "./session.js";
 import { getProfile } from "./profiles/index.js";
-import { runDutSequence } from "./sequence.js";
+import { runOrchestratorSequence } from "./sequence.js";
 
-export class DutManager {
-  private sessions = new Map<string, DutSession>();
+export class OrchestratorManager {
+  private sessions = new Map<string, OrchestratorSession>();
 
   constructor(private serial: SerialManager) {}
 
-  /** Attach a DUT session (profile protocol layer) to an open serial connection. */
-  attach(connectionId: string, profileName: string): { profile: DutProfile } {
+  /** Attach a Orchestrator session (profile protocol layer) to an open serial connection. */
+  attach(connectionId: string, profileName: string): { profile: OrchestratorProfile } {
     // Fail early if the connection doesn't exist.
     this.serial.getInfo(connectionId);
     if (this.sessions.has(connectionId)) {
       throw new Error(
-        `Connection ${connectionId} already has a DUT session (${this.sessions.get(connectionId)!.profile.name}). Detach first.`
+        `Connection ${connectionId} already has a Orchestrator session (${this.sessions.get(connectionId)!.profile.name}). Detach first.`
       );
     }
     const profile = getProfile(profileName);
-    const session = new DutSession(profile, connectionId, this.serial);
+    const session = new OrchestratorSession(profile, connectionId, this.serial);
     session.attach();
     this.sessions.set(connectionId, session);
     return { profile };
@@ -31,7 +31,7 @@ export class DutManager {
 
   detach(connectionId: string): void {
     const s = this.sessions.get(connectionId);
-    if (!s) throw new Error(`No DUT session on ${connectionId}`);
+    if (!s) throw new Error(`No Orchestrator session on ${connectionId}`);
     s.detach();
     this.sessions.delete(connectionId);
   }
@@ -41,7 +41,7 @@ export class DutManager {
   }
 
   /** Every attached session, in attach order (panel discovery, diagnostics). */
-  listSessions(): Array<{ connectionId: string; profile: DutProfile; stats: DutSession["stats"] }> {
+  listSessions(): Array<{ connectionId: string; profile: OrchestratorProfile; stats: OrchestratorSession["stats"] }> {
     return [...this.sessions.entries()].map(([connectionId, session]) => ({
       connectionId,
       profile: session.profile,
@@ -49,9 +49,9 @@ export class DutManager {
     }));
   }
 
-  getSession(connectionId: string): DutSession {
+  getSession(connectionId: string): OrchestratorSession {
     const s = this.sessions.get(connectionId);
-    if (!s) throw new Error(`No DUT session on ${connectionId}. Call dut_connect first.`);
+    if (!s) throw new Error(`No Orchestrator session on ${connectionId}. Call orchestrator_connect first.`);
     return s;
   }
 
@@ -60,7 +60,7 @@ export class DutManager {
     connectionId: string,
     commandName: string,
     overrides?: { cmd?: number; p1?: number; p2?: number }
-  ): Promise<DutRunResult> {
+  ): Promise<OrchestratorRunResult> {
     const session = this.getSession(connectionId);
     const def = session.profile.commands.find((c) => c.name === commandName);
     if (!def) {
@@ -73,14 +73,14 @@ export class DutManager {
     return this.judge(def, out, started);
   }
 
-  /** Run a free-form action sequence (dut_sequence). */
+  /** Run a free-form action sequence (orchestrator_sequence). */
   async runSequence(
     connectionId: string,
-    actions: DutAction[],
-    options?: DutSequenceOptions
-  ): Promise<DutSequenceResult> {
+    actions: OrchestratorAction[],
+    options?: OrchestratorSequenceOptions
+  ): Promise<OrchestratorSequenceResult> {
     const session = this.getSession(connectionId);
-    return runDutSequence(session, actions, options);
+    return runOrchestratorSequence(session, actions, options);
   }
 
   /**
@@ -92,11 +92,11 @@ export class DutManager {
     includeLowPower = false,
     listeners?: {
       onStart?: (total: number, profile: string) => void;
-      onStep?: (step: DutRunResult, index: number, total: number) => void;
+      onStep?: (step: OrchestratorRunResult, index: number, total: number) => void;
     }
   ): Promise<{
     profile: string;
-    steps: DutRunResult[];
+    steps: OrchestratorRunResult[];
     passed: number;
     failed: number;
     report: number;
@@ -109,7 +109,7 @@ export class DutManager {
     const planned = names.filter((n) => session.profile.commands.some((c) => c.name === n));
 
     listeners?.onStart?.(planned.length, session.profile.name);
-    const steps: DutRunResult[] = [];
+    const steps: OrchestratorRunResult[] = [];
     for (let i = 0; i < planned.length; i++) {
       const step = await this.runCommand(connectionId, planned[i]);
       steps.push(step);
@@ -130,7 +130,7 @@ export class DutManager {
   // ── Judging (generic, driven purely by profile judge rules) ──
 
   private judge(
-    def: DutCommandDef,
+    def: OrchestratorCommandDef,
     out: {
       sent: string[];
       frames: Array<{ bytes: number[]; timestamp: string }>;
@@ -139,9 +139,9 @@ export class DutManager {
       timedOut: boolean;
     },
     started: number
-  ): DutRunResult {
+  ): OrchestratorRunResult {
     const failedChecks: string[] = [];
-    let verdict: DutRunResult["verdict"] = "REPORT";
+    let verdict: OrchestratorRunResult["verdict"] = "REPORT";
 
     const j = def.judge;
     if (j) {
@@ -237,7 +237,7 @@ export function hex(v: number): string {
   return "0x" + (v & 0xff).toString(16).toUpperCase().padStart(2, "0");
 }
 
-export function formatRun(r: DutRunResult): string {
+export function formatRun(r: OrchestratorRunResult): string {
   const lines: string[] = [];
   lines.push(`【${r.command}】${r.title}`);
   lines.push(`判定: ${r.verdict}  (${r.elapsedMs}ms)`);

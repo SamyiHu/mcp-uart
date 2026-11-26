@@ -1,11 +1,11 @@
 /**
- * Offline tests for dut_sequence (no hardware).
- * Mocks DutSession-like manager the same way dut-offline-test does.
+ * Offline tests for orchestrator_sequence (no hardware).
+ * Mocks OrchestratorSession-like manager the same way orchestrator-offline-test does.
  */
-import { DutSession, checksumOf } from "../dist/dut/session.js";
-import { DutManager } from "../dist/dut/manager.js";
-import { getProfile } from "../dist/dut/profiles/index.js";
-import { runDutSequence, validateMatchHex } from "../dist/dut/sequence.js";
+import { OrchestratorSession, checksumOf } from "../dist/orchestrator/session.js";
+import { OrchestratorManager } from "../dist/orchestrator/manager.js";
+import { getProfile } from "../dist/orchestrator/profiles/index.js";
+import { runOrchestratorSequence, validateMatchHex } from "../dist/orchestrator/sequence.js";
 
 const assert = (cond, msg) => {
   if (!cond) {
@@ -85,12 +85,12 @@ assert(threw, "matchHex requires ≥4 chars");
 // ── 2. IDLE-style: send + clear-state + poll twoPhase ──
 {
   const mock = new MockSerial();
-  const s = new DutSession(profile, "c-idle", mock);
+  const s = new OrchestratorSession(profile, "c-idle", mock);
   s.attach();
   await withEchoResult(mock, s, { delayEcho: 1, delayResult: 12 });
 
   // Manual echo of IDLE will come async; sequence will clear-state before poll
-  const r = await runDutSequence(s, [
+  const r = await runOrchestratorSequence(s, [
     { type: "send-frame", cmd: "0x01" },
     { type: "wait", ms: 8 },
     { type: "clear-state" },
@@ -120,9 +120,9 @@ assert(threw, "matchHex requires ≥4 chars");
 // ── 3. LED spam: repeat send + delay, budget stop ──
 {
   const mock = new MockSerial();
-  const s = new DutSession(profile, "c-led", mock);
+  const s = new OrchestratorSession(profile, "c-led", mock);
   s.attach();
-  const r = await runDutSequence(
+  const r = await runOrchestratorSequence(
     s,
     [
       {
@@ -146,9 +146,9 @@ assert(threw, "matchHex requires ≥4 chars");
 // ── 4. signals finally restores break ──
 {
   const mock = new MockSerial();
-  const s = new DutSession(profile, "c-sig", mock);
+  const s = new OrchestratorSession(profile, "c-sig", mock);
   s.attach();
-  const r = await runDutSequence(s, [
+  const r = await runOrchestratorSequence(s, [
     { type: "signals", break: true, holdMs: 15 },
     { type: "wait", ms: 5 },
   ]);
@@ -160,10 +160,10 @@ assert(threw, "matchHex requires ≥4 chars");
 // ── 5. baseline + recoveryMs ──
 {
   const mock = new MockSerial();
-  const s = new DutSession(profile, "c-rec", mock);
+  const s = new OrchestratorSession(profile, "c-rec", mock);
   s.attach();
   await withEchoResult(mock, s, { delayEcho: 1, delayResult: 20 });
-  const r = await runDutSequence(s, [
+  const r = await runOrchestratorSequence(s, [
     { type: "send-frame", cmd: "0x0A", p1: 1, baseline: true },
     { type: "wait", ms: 5 },
     { type: "clear-state" },
@@ -185,10 +185,10 @@ assert(threw, "matchHex requires ≥4 chars");
 // ── 6. hard abort on write failure ──
 {
   const mock = new MockSerial();
-  const s = new DutSession(profile, "c-abort", mock);
+  const s = new OrchestratorSession(profile, "c-abort", mock);
   s.attach();
   mock.failWrite = true;
-  const r = await runDutSequence(s, [
+  const r = await runOrchestratorSequence(s, [
     { type: "send-frame", cmd: "0x0F" },
     { type: "wait", ms: 10 },
   ]);
@@ -199,15 +199,15 @@ assert(threw, "matchHex requires ≥4 chars");
 // ── 7. delay alias via manager ──
 {
   const mock = new MockSerial();
-  const dut = new DutManager(mock);
-  dut.attach("c-mgr", "frame-demo");
-  const r = await dut.runSequence("c-mgr", [
+  const orchestrator = new OrchestratorManager(mock);
+  orchestrator.attach("c-mgr", "frame-demo");
+  const r = await orchestrator.runSequence("c-mgr", [
     { type: "wait", ms: 5 },
     { type: "send-raw", hex: "5A" },
   ]);
   assert(r.ok, "manager.runSequence works");
   assert(mock.writes.includes("5A"), "raw sent through manager");
-  dut.detach("c-mgr");
+  orchestrator.detach("c-mgr");
 }
 
-console.log("\n=== dut_sequence offline tests done ===");
+console.log("\n=== orchestrator_sequence offline tests done ===");

@@ -3,7 +3,7 @@
  * SerialManager satisfies this; tests inject a fake.
  */
 import type { ConnectionInfo, MessageFilter, SerialConfig, SerialMessage } from "../types.js";
-import type { DutRunResult } from "../dut/types.js";
+import type { OrchestratorRunResult } from "../orchestrator/types.js";
 
 export type HubFrame = SerialMessage & { seq: number };
 
@@ -22,14 +22,14 @@ export interface HubBackend {
 }
 
 /**
- * DUT façade the Hub offers when a DUT manager is present.
+ * Orchestrator façade the Hub offers when a Orchestrator manager is present.
  *
- * The Hub itself only knows ports and frames; a DUT session adds a profile
+ * The Hub itself only knows ports and frames; a Orchestrator session adds a profile
  * (frame format, command table, judge rules) on top of one connection. Every
  * call names a connection or inherits the Hub's active one, so the panel and
  * the agent keep working on the same session.
  */
-export type DutProfileSummary = {
+export type OrchestratorProfileSummary = {
   name: string;
   chip: string;
   description: string;
@@ -47,24 +47,24 @@ export type DutProfileSummary = {
   lowPower?: string[];
 };
 
-export type DutStats = {
+export type OrchestratorStats = {
   framesParsed: number;
   framesSent: number;
   rawBytesSent: number;
   noiseBytes: number;
 };
 
-export type DutStatus = {
+export type OrchestratorStatus = {
   connected: boolean;
   connectionId: string | null;
   profile: string | null;
   chip: string | null;
   port: string | null;
   baudRate: number | null;
-  stats: DutStats | null;
+  stats: OrchestratorStats | null;
 };
 
-export type DutSmokeSummary = {
+export type OrchestratorSmokeSummary = {
   profile: string;
   passed: number;
   failed: number;
@@ -73,29 +73,29 @@ export type DutSmokeSummary = {
   elapsedMs: number;
 };
 
-export type DutSmokeResult = DutSmokeSummary & { steps: DutRunResult[] };
+export type OrchestratorSmokeResult = OrchestratorSmokeSummary & { steps: OrchestratorRunResult[] };
 
 /** Progress an SSE client can watch while a smoke run is in flight. */
-export type DutEvent =
+export type OrchestratorEvent =
   | { kind: "smoke-start"; profile: string; total: number }
-  | { kind: "smoke-step"; index: number; total: number; step: DutRunResult }
-  | { kind: "smoke-done"; summary: DutSmokeSummary };
+  | { kind: "smoke-step"; index: number; total: number; step: OrchestratorRunResult }
+  | { kind: "smoke-done"; summary: OrchestratorSmokeSummary };
 
-export interface HubDut {
+export interface HubOrchestrator {
   /** True while a long-running run holds the serial line. */
   busy(): boolean;
-  profiles(): DutProfileSummary[];
-  status(connectionId?: string | null): DutStatus;
+  profiles(): OrchestratorProfileSummary[];
+  status(connectionId?: string | null): OrchestratorStatus;
   connect(options: {
     profile: string;
     path?: string;
     baudRate?: number;
     connectionId?: string | null;
-  }): Promise<{ connectionId: string; opened: boolean; status: DutStatus }>;
+  }): Promise<{ connectionId: string; opened: boolean; status: OrchestratorStatus }>;
   disconnect(options?: { connectionId?: string | null; closePort?: boolean }): Promise<void>;
-  runCommand(name: string, connectionId?: string | null): Promise<DutRunResult>;
+  runCommand(name: string, connectionId?: string | null): Promise<OrchestratorRunResult>;
   runSmoke(
     options: { includeLowPower?: boolean; connectionId?: string | null },
-    onEvent?: (event: DutEvent) => void
-  ): Promise<DutSmokeResult>;
+    onEvent?: (event: OrchestratorEvent) => void
+  ): Promise<OrchestratorSmokeResult>;
 }

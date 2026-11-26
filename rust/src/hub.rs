@@ -15,14 +15,14 @@ use std::thread;
 use serde_json::{json, Value};
 use tiny_http::{Header, Method, Response, Server, StatusCode};
 
-use crate::dut::{DutEvent, DutManager};
+use crate::orchestrator::{OrchestratorEvent, OrchestratorManager};
 use crate::model::SerialConfig;
 use crate::serial::SerialManager;
 use crate::util::{json_error, now_iso};
 
 pub struct HubState {
     pub manager: Arc<SerialManager>,
-    pub dut: Arc<DutManager>,
+    pub orchestrator: Arc<OrchestratorManager>,
     pub active: Mutex<Option<String>>,
     pub owns_port: Mutex<bool>,
     pub frames: Mutex<VecDeque<Value>>,
@@ -36,10 +36,10 @@ pub struct HubState {
 
 impl HubState {
     pub fn new(manager: Arc<SerialManager>, profiles_dir: &std::path::Path) -> Arc<Self> {
-        let dut = DutManager::new(manager.clone(), profiles_dir);
+        let orchestrator = OrchestratorManager::new(manager.clone(), profiles_dir);
         let state = Arc::new(Self {
             manager: manager.clone(),
-            dut,
+            orchestrator,
             active: Mutex::new(None),
             owns_port: Mutex::new(false),
             frames: Mutex::new(VecDeque::new()),
@@ -98,22 +98,22 @@ impl HubState {
         rx
     }
 
-    /// Broadcast an `event: dut` block to every SSE client, matching the Node
-    /// Hub's `broadcast("dut", event, connectionId)`.
-    fn broadcast_dut(&self, event: &DutEvent, connection_id: Option<&str>) {
+    /// Broadcast an `event: orchestrator` block to every SSE client, matching the Node
+    /// Hub's `broadcast("orchestrator", event, connectionId)`.
+    fn broadcast_orchestrator(&self, event: &OrchestratorEvent, connection_id: Option<&str>) {
         let payload = match event {
-            DutEvent::SmokeStart { profile, total } => json!({
+            OrchestratorEvent::SmokeStart { profile, total } => json!({
                 "kind": "smoke-start", "profile": profile, "total": total
             }),
-            DutEvent::SmokeStep { index, total, step } => json!({
+            OrchestratorEvent::SmokeStep { index, total, step } => json!({
                 "kind": "smoke-step", "index": index, "total": total, "step": step
             }),
-            DutEvent::SmokeDone { pass, fail, report, elapsed_ms } => json!({
+            OrchestratorEvent::SmokeDone { pass, fail, report, elapsed_ms } => json!({
                 "kind": "smoke-done", "pass": pass, "fail": fail, "report": report,
                 "elapsedMs": elapsed_ms
             }),
         };
-        let block = format!("event: dut\ndata: {}\n\n", payload);
+        let block = format!("event: orchestrator\ndata: {}\n\n", payload);
         let mut subs = self.sse.lock().unwrap();
         subs.retain(|tx| tx.send(block.clone()).is_ok());
         let _ = connection_id; // panel filters by active connection on the client
@@ -184,8 +184,8 @@ fn active_summary(state: &HubState) -> Value {
     }
 }
 
-/// `/api/dut` and `/api/dut/*` — route-for-route compatible with the Node Hub.
-fn handle_dut(
+/// `/api/orchestrator` and `/api/orchestrator/*` — route-for-route compatible with the Node Hub.
+fn handle_orchestrator(
     state: Arc<HubState>,
     mut request: tiny_http::Request,
     method: &Method,
@@ -193,24 +193,24 @@ fn handle_dut(
 ) -> std::io::Result<()> {
     let active = state.active.lock().unwrap().clone();
 
-    if *method == Method::Get && path == "/api/dut" {
+    if *method == Method::Get && path == "/api/orchestrator" {
         return respond_json(request, 200, json!({
             "ok": true,
             "available": true,
-            "profiles": state.dut.profiles(),
-            "status": state.dut.status(active),
+            "profiles": state.orchestrator.profiles(),
+            "status": state.orchestrator.status(active),
             "active": active_summary(&state),
         }));
     }
-    if *method == Method::Get && path == "/api/dut/status" {
+    if *method == Method::Get && path == "/api/orchestrator/status" {
         return respond_json(request, 200, json!({
             "ok": true,
             "available": true,
-            "status": state.dut.status(active),
+            "status": state.orchestrator.status(active),
             "active": active_summary(&state),
         }));
     }
-    if *method == Method::Post && path == "/api/dut/connect" {
+    if *method == Method::Post && path == "/api/orchestrator/connect" {
         let body = match read_json(&mut request) {
             Ok(v) => v, Err(e) => return respond_json(request, 400, json_error(e)),
         };
@@ -219,7 +219,7 @@ fn handle_dut(
         let path_arg = body.get("path").and_then(|v| v.as_str());
         let baud = body.get("baudRate").and_then(|v| v.as_u64()).map(|v| v as u32);
         let conn = body.get("connectionId").and_then(|v| v.as_str()).map(|s| s.to_string()).or(active);
-        match state.dut.connect(profile, path_arg, baud, conn) {
+        match state.orchestrator.connect(profile, path_arg, baud, conn) {
             Ok((id, opened)) => {
                 // Only adopt as the Hub's active connection if it changed.
                 let is_active = *state.active.lock().unwrap() == Some(id.clone());
@@ -231,52 +231,68 @@ fn handle_dut(
                     "ok": true,
                     "connectionId": id,
                     "opened": opened,
-                    "status": state.dut.status(Some(id)),
+                    "status": state.orchestrator.status(Some(id)),
                     "active": active_summary(&state),
                 }))
             }
             Err(e) => respond_json(request, 500, json_error(e)),
         }
-    } else if *method == Method::Post && path == "/api/dut/disconnect" {
+    } else if *method == Method::Post && path == "/api/orchestrator/disconnect" {
         let close_port = false; // Rust Hub owns the port; detach session only.
-        match state.dut.disconnect(active.clone(), close_port) {
+        match state.orchestrator.disconnect(active.clone(), close_port) {
             Ok(()) => respond_json(request, 200, json!({
                 "ok": true,
-                "status": state.dut.status(None),
+                "status": state.orchestrator.status(None),
                 "active": active_summary(&state),
             })),
             Err(e) => respond_json(request, 500, json_error(e)),
         }
-    } else if *method == Method::Post && path == "/api/dut/run" {
+    } else if *method == Method::Post && path == "/api/orchestrator/run" {
         let body = match read_json(&mut request) {
             Ok(v) => v, Err(e) => return respond_json(request, 400, json_error(e)),
         };
         let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("");
         if name.is_empty() { return respond_json(request, 400, json_error("name is required")); }
-        if !state.dut.status(active.clone()).get("connected").and_then(|v| v.as_bool()).unwrap_or(false) {
-            return respond_json(request, 409, json_error("No DUT session. Connect a profile first."));
+        if !state.orchestrator.status(active.clone()).get("connected").and_then(|v| v.as_bool()).unwrap_or(false) {
+            return respond_json(request, 409, json_error("No Orchestrator session. Connect a profile first."));
         }
-        if state.dut.busy() {
+        if state.orchestrator.busy() {
             return respond_json(request, 409, json_error("A smoke run is already in progress"));
         }
-        match state.dut.run_command(active.clone(), name) {
+        match state.orchestrator.run_command(active.clone(), name) {
             Ok(result) => respond_json(request, 200, json!({ "ok": true, "result": result })),
             Err(e) => respond_json(request, 500, json_error(e)),
         }
-    } else if *method == Method::Post && path == "/api/dut/smoke" {
+    } else if *method == Method::Post && path == "/api/orchestrator/smoke" {
         let body = match read_json(&mut request) {
             Ok(v) => v, Err(e) => return respond_json(request, 400, json_error(e)),
         };
-        if !state.dut.status(active.clone()).get("connected").and_then(|v| v.as_bool()).unwrap_or(false) {
-            return respond_json(request, 409, json_error("No DUT session. Connect a profile first."));
+        if !state.orchestrator.status(active.clone()).get("connected").and_then(|v| v.as_bool()).unwrap_or(false) {
+            return respond_json(request, 409, json_error("No Orchestrator session. Connect a profile first."));
         }
-        if state.dut.busy() {
+        if state.orchestrator.busy() {
             return respond_json(request, 409, json_error("A smoke run is already in progress"));
         }
         let low = body.get("includeLowPower").and_then(|v| v.as_bool()).unwrap_or(false);
         let conn = active.clone();
-        let emit = |event: DutEvent| state.broadcast_dut(&event, conn.as_deref());
-        match state.dut.run_smoke(active.clone(), low, &emit) {
+        let emit = |event: OrchestratorEvent| state.broadcast_orchestrator(&event, conn.as_deref());
+        match state.orchestrator.run_smoke(active.clone(), low, &emit) {
+            Ok(result) => respond_json(request, 200, json!({ "ok": true, "result": result })),
+            Err(e) => respond_json(request, 500, json_error(e)),
+        }
+    } else if *method == Method::Post && path == "/api/orchestrator/sequence" {
+        let body = match read_json(&mut request) {
+            Ok(v) => v, Err(e) => return respond_json(request, 400, json_error(e)),
+        };
+        if !state.orchestrator.status(active.clone()).get("connected").and_then(|v| v.as_bool()).unwrap_or(false) {
+            return respond_json(request, 409, json_error("No orchestrator session. Connect a profile first."));
+        }
+        let actions = body.get("actions").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+        if actions.is_empty() {
+            return respond_json(request, 400, json_error("actions[] is required"));
+        }
+        let options = body.get("options").cloned().unwrap_or(json!({}));
+        match state.orchestrator.run_sequence(active.clone(), &actions, &options) {
             Ok(result) => respond_json(request, 200, json!({ "ok": true, "result": result })),
             Err(e) => respond_json(request, 500, json_error(e)),
         }
@@ -291,9 +307,13 @@ fn handle(state: Arc<HubState>, mut request: tiny_http::Request) -> std::io::Res
     let query = url.split('?').nth(1).unwrap_or("").to_string();
     let method = request.method().clone();
 
-    // DUT routes use a path prefix; handle them before the exact-match table.
-    if path == "/api/dut" || path.starts_with("/api/dut/") {
-        return handle_dut(state, request, &method, &path);
+    // Orchestrator routes use a path prefix; handle them before the exact-match
+    // table. `/api/dut*` stays as a one-release alias for existing clients.
+    if path == "/api/orchestrator" || path.starts_with("/api/orchestrator/")
+        || path == "/api/dut" || path.starts_with("/api/dut/")
+    {
+        let normalised = path.replace("/api/dut", "/api/orchestrator");
+        return handle_orchestrator(state, request, &method, &normalised);
     }
 
     match (method, path.as_str()) {
@@ -311,10 +331,10 @@ fn handle(state: Arc<HubState>, mut request: tiny_http::Request) -> std::io::Res
                     "ownsPort": owns,
                     "frameCount": frames,
                     "seq": seq,
-                    "dut": true,
+                    "orchestrator": true,
                     "pid": std::process::id(),
                     "startedAt": state.started_at.clone(),
-                    "features": { "history": true, "dut": true },
+                    "features": { "history": true, "orchestrator": true },
                 }),
             )
         }

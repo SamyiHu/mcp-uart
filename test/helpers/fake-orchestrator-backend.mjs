@@ -1,11 +1,11 @@
 /**
- * Fake DUT backend for offline Hub tests: same facade a real DutManager
+ * Fake Orchestrator backend for offline Hub tests: same facade a real OrchestratorManager
  * produces, but the runs are synthetic and instant. It opens ports through the
  * supplied fake serial backend, so connection ids line up with the Hub's.
  */
 const PROFILES = [
   {
-    name: "fake-dut",
+    name: "fake-orchestrator",
     chip: "FAKE-1",
     description: "Synthetic profile for offline UI and API tests.",
     serial: { baudRate: 115200, dataBits: 8, stopBits: 1, parity: "none", wiring: "TX→RX, common ground" },
@@ -21,7 +21,7 @@ const PROFILES = [
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export class FakeDutBackend {
+export class FakeOrchestratorBackend {
   constructor(serial) {
     this.serial = serial;
     this.connectionId = null;
@@ -65,13 +65,13 @@ export class FakeDutBackend {
   }
 
   async connect({ profile, path, baudRate, connectionId }) {
-    if (!PROFILES.some((p) => p.name === profile)) throw new Error("Unknown DUT profile '" + profile + "'");
+    if (!PROFILES.some((p) => p.name === profile)) throw new Error("Unknown Orchestrator profile '" + profile + "'");
     if (connectionId) {
       this.connectionId = connectionId;
       this.profile = profile;
       return { connectionId, opened: false, status: this.status(connectionId) };
     }
-    if (!path) throw new Error("path is required to open a DUT port");
+    if (!path) throw new Error("path is required to open a Orchestrator port");
     const opened = await this.serial.open({ path, baudRate: baudRate ?? 115200, encoding: "hex", protocol: "raw" });
     this.connectionId = opened.connectionId;
     this.profile = profile;
@@ -87,7 +87,7 @@ export class FakeDutBackend {
   }
 
   async runCommand(name) {
-    if (this.connectionId === null) throw new Error("No DUT session. Pick a profile and connect first.");
+    if (this.connectionId === null) throw new Error("No Orchestrator session. Pick a profile and connect first.");
     const profile = PROFILES.find((p) => p.name === this.profile);
     const command = profile?.commands.find((c) => c.name === name);
     if (!command) throw new Error("Command '" + name + "' not in profile '" + this.profile + "'");
@@ -114,7 +114,7 @@ export class FakeDutBackend {
   }
 
   async runSmoke({ includeLowPower, connectionId } = {}, onEvent) {
-    if (this.connectionId === null) throw new Error("No DUT session. Pick a profile and connect first.");
+    if (this.connectionId === null) throw new Error("No Orchestrator session. Pick a profile and connect first.");
     void connectionId;
     const names = ["ping", "adc", ...(includeLowPower ? ["fail_me"] : [])];
     this.running = true;

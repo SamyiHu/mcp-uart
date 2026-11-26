@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "串口工具",
-    "description": "给 Agent 使用的串口工具：uart_serial（连接与收发）、uart_dut（编排配置与冒烟）、uart_view（帧与历史），通过面板启动的 Hub 操作同一串口会话。"
+    "description": "给 Agent 使用的串口工具：uart_serial（连接与收发）、uart_orchestrator（编排配置与冒烟）、uart_view（帧与历史），通过面板启动的 Hub 操作同一串口会话。"
   }
 }

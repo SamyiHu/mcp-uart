@@ -2,7 +2,7 @@
 //!
 //! Three grouped tools, matching the Node build and the DSH-native tools:
 //!   uart_serial  serial port control
-//!   uart_dut     DUT (orchestrator) profiles and smoke runs
+//!   uart_orchestrator     Orchestrator (orchestrator) profiles and smoke runs
 //!   uart_view    frames / history / visualisations
 //!
 //! Keeping the transport hand rolled avoids a heavy async runtime for what is
@@ -13,20 +13,20 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 
-use crate::dut::{DutEvent, DutManager};
+use crate::orchestrator::{OrchestratorEvent, OrchestratorManager};
 use crate::model::SerialConfig;
 use crate::serial::SerialManager;
 
 pub fn serve(manager: Arc<SerialManager>) -> std::io::Result<()> {
-    // MCP stdio has its own serial stack (and its own DUT sessions) — it is a
+    // MCP stdio has its own serial stack (and its own Orchestrator sessions) — it is a
     // separate process from the Hub. Load the shipped profiles from the repo.
     let profiles_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap_or_else(|| std::path::Path::new("."))
         .join("src")
-        .join("dut")
+        .join("orchestrator")
         .join("profiles");
-    let dut = DutManager::new(manager.clone(), &profiles_dir);
+    let orchestrator = OrchestratorManager::new(manager.clone(), &profiles_dir);
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
 
@@ -66,7 +66,7 @@ pub fn serve(manager: Arc<SerialManager>) -> std::io::Result<()> {
             "tools/call" => {
                 let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
                 let args = params.get("arguments").cloned().unwrap_or(json!({}));
-                match call_tool(&manager, &dut, name, &args) {
+                match call_tool(&manager, &orchestrator, name, &args) {
                     Ok(text) => Some(json!({
                         "jsonrpc": "2.0",
                         "id": id,
@@ -122,19 +122,21 @@ fn serial_parameters() -> Value {
     })
 }
 
-fn dut_parameters() -> Value {
+fn orchestrator_parameters() -> Value {
     json!({
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["list","connect","disconnect","run","smoke","status"],
+                "enum": ["list","connect","disconnect","run","sequence","smoke","status"],
                 "description": "Operation to run."
             },
             "profile": { "type": "string", "description": "Profile name." },
             "path": { "type": "string" },
             "baudRate": { "type": "integer" },
             "name": { "type": "string", "description": "Command name for action=run." },
+            "actions": { "type": "array", "items": { "type": "object" }, "description": "Action list for action=sequence." },
+            "options": { "type": "object", "description": "totalBudgetMs / abortOnError / captureFrames." },
             "includeLowPower": { "type": "boolean" }
         },
         "required": ["action"],
@@ -171,10 +173,10 @@ fn tool_schemas() -> Vec<Value> {
             "inputSchema": serial_parameters()
         }),
         json!({
-            "name": "uart_dut",
-            "title": "DUT test profiles",
-            "description": "Profile-driven DUT testing: list profiles, connect, run a command or the smoke sequence, and read session status. Select the operation with `action`.",
-            "inputSchema": dut_parameters()
+            "name": "uart_orchestrator",
+            "title": "Orchestrator test profiles",
+            "description": "Profile-driven Orchestrator testing: list profiles, connect, run a command or the smoke sequence, and read session status. Select the operation with `action`.",
+            "inputSchema": orchestrator_parameters()
         }),
         json!({
             "name": "uart_view",
@@ -185,10 +187,10 @@ fn tool_schemas() -> Vec<Value> {
     ]
 }
 
-fn call_tool(manager: &Arc<SerialManager>, dut: &Arc<DutManager>, name: &str, args: &Value) -> Result<String, String> {
+fn call_tool(manager: &Arc<SerialManager>, orchestrator: &Arc<OrchestratorManager>, name: &str, args: &Value) -> Result<String, String> {
     match name {
         "uart_serial" => call_serial(manager, args),
-        "uart_dut" => call_dut(dut, args),
+        "uart_orchestrator" => call_orchestrator(orchestrator, args),
         "uart_view" => call_view(manager, args),
         // Accept the old flat names too, so any stale caller keeps working.
         "serial_list_ports" => call_serial(manager, &json!({"action":"list_ports"})),
@@ -322,12 +324,12 @@ fn call_view(manager: &Arc<SerialManager>, args: &Value) -> Result<String, Strin
     }
 }
 
-fn call_dut(dut: &Arc<DutManager>, args: &Value) -> Result<String, String> {
+fn call_orchestrator(orchestrator: &Arc<OrchestratorManager>, args: &Value) -> Result<String, String> {
     let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("");
     match action {
         "list" => {
-            let profiles = dut.profiles();
-            if profiles.is_empty() { return Ok("No DUT profiles installed.".into()); }
+            let profiles = orchestrator.profiles();
+            if profiles.is_empty() { return Ok("No Orchestrator profiles installed.".into()); }
             Ok(profiles.iter().map(|p| {
                 let name = p.get("name").and_then(|v| v.as_str()).unwrap_or("");
                 let desc = p.get("description").and_then(|v| v.as_str()).unwrap_or("");
@@ -339,16 +341,16 @@ fn call_dut(dut: &Arc<DutManager>, args: &Value) -> Result<String, String> {
             let profile = args.get("profile").and_then(|v| v.as_str()).ok_or("profile is required")?;
             let path = args.get("path").and_then(|v| v.as_str());
             let baud = args.get("baudRate").and_then(|v| v.as_u64()).map(|v| v as u32);
-            let (id, opened) = dut.connect(profile, path, baud, None)?;
-            Ok(format!("DUT {profile} connected to {id}{}", if opened { " (port opened)" } else { " (attached)" }))
+            let (id, opened) = orchestrator.connect(profile, path, baud, None)?;
+            Ok(format!("Orchestrator {profile} connected to {id}{}", if opened { " (port opened)" } else { " (attached)" }))
         }
         "disconnect" => {
-            let id = dut.status(None).get("connectionId").and_then(|v| v.as_str()).map(|s| s.to_string());
-            dut.disconnect(id, false)?;
-            Ok("DUT session closed".into())
+            let id = orchestrator.status(None).get("connectionId").and_then(|v| v.as_str()).map(|s| s.to_string());
+            orchestrator.disconnect(id, false)?;
+            Ok("Orchestrator session closed".into())
         }
         "status" => {
-            let s = dut.status(None);
+            let s = orchestrator.status(None);
             Ok(format!("profile: {}\nconnected: {}\nbusy: {}",
                 s.get("profile").and_then(|v| v.as_str()).unwrap_or("(none)"),
                 s.get("connected").and_then(|v| v.as_bool()).unwrap_or(false),
@@ -356,8 +358,8 @@ fn call_dut(dut: &Arc<DutManager>, args: &Value) -> Result<String, String> {
         }
         "run" => {
             let name = args.get("name").and_then(|v| v.as_str()).ok_or("name is required")?;
-            let id = dut.status(None).get("connectionId").and_then(|v| v.as_str()).map(|s| s.to_string());
-            let r = dut.run_command(id, name)?;
+            let id = orchestrator.status(None).get("connectionId").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let r = orchestrator.run_command(id, name)?;
             let mut lines = vec![format!("[{}] {} — {} ({}ms)", r.verdict, r.command, r.title, r.elapsed_ms)];
             if !r.failed_checks.is_empty() { lines.push(format!("failed: {}", r.failed_checks.join("; "))); }
             if !r.frames.is_empty() {
@@ -366,10 +368,28 @@ fn call_dut(dut: &Arc<DutManager>, args: &Value) -> Result<String, String> {
             }
             Ok(lines.join("\n"))
         }
-        "smoke" => {
-            let id = dut.status(None).get("connectionId").and_then(|v| v.as_str()).map(|s| s.to_string());
+        "sequence" => {
+            let actions = args.get("actions").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            if actions.is_empty() { return Err("actions[] is required".into()); }
+            let options = args.get("options").cloned().unwrap_or(json!({}));
+            let id = orchestrator.status(None).get("connectionId").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let result = orchestrator.run_sequence(id, &actions, &options)?;
+            let stopped = result.get("stopped").and_then(|v| v.as_str()).unwrap_or("null");
+            let elapsed = result.get("elapsedMs").and_then(|v| v.as_u64()).unwrap_or(0);
+            let steps = result.get("steps").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            let lines = steps.iter().map(|s| {
+                let i = s.get("i").and_then(|v| v.as_u64()).unwrap_or(0);
+                let action = s.get("action").and_then(|v| v.as_str()).unwrap_or("");
+                let verdict = s.get("verdict").and_then(|v| v.as_str()).unwrap_or("");
+                let at = s.get("atMs").and_then(|v| v.as_u64()).unwrap_or(0);
+                format!("[{i}] {action} @{at}ms {verdict}")
+            }).collect::<Vec<_>>().join("\n");
+            Ok(format!("ok={} stopped={stopped} elapsed={elapsed}ms\n{lines}",
+                result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false)))
+        }
+        "smoke" => {            let id = orchestrator.status(None).get("connectionId").and_then(|v| v.as_str()).map(|s| s.to_string());
             let low = args.get("includeLowPower").and_then(|v| v.as_bool()).unwrap_or(false);
-            let result = dut.run_smoke(id, low, &|_event: DutEvent| {})?;
+            let result = orchestrator.run_smoke(id, low, &|_event: OrchestratorEvent| {})?;
             let steps = result.get("steps").and_then(|v| v.as_array()).cloned().unwrap_or_default();
             let head = format!("PASS {} · FAIL {} · REPORT {} ({}ms)",
                 result.get("passed").and_then(|v| v.as_u64()).unwrap_or(0),
@@ -385,6 +405,6 @@ fn call_dut(dut: &Arc<DutManager>, args: &Value) -> Result<String, String> {
             }).collect::<Vec<_>>().join("\n");
             Ok(format!("{head}\n{body}"))
         }
-        other => Err(format!("Unknown uart_dut action: {other}")),
+        other => Err(format!("Unknown uart_orchestrator action: {other}")),
     }
 }

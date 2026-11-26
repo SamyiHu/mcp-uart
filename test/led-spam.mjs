@@ -1,4 +1,4 @@
-// Spam the LED-ON command so the DUT keeps re-entering the LED test
+// Spam the LED-ON command so the Orchestrator keeps re-entering the LED test
 // (the test exits as soon as any 4 RX bytes arrive, so it must be retriggered).
 import { SerialPort } from "serialport";
 

@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import type { SerialMessage } from "./types.js";
-import type { DutRunResult } from "./dut/types.js";
+import type { OrchestratorRunResult } from "./orchestrator/types.js";
 
 export function toHex(v: number): string {
   return "0x" + (v & 0xff).toString(16).toUpperCase().padStart(2, "0");
@@ -107,7 +107,7 @@ ${
 
 export function renderSmokeHtml(opts: {
   profile: string;
-  steps: DutRunResult[];
+  steps: OrchestratorRunResult[];
   passed: number;
   failed: number;
   report: number;
@@ -143,7 +143,7 @@ export function renderSmokeHtml(opts: {
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8"/>
-<title>DUT Smoke — ${esc(profile)}</title>
+<title>Orchestrator Smoke — ${esc(profile)}</title>
 <style>
   :root { --bg:#0f1419; --panel:#1a2332; --ink:#e7ecf3; --muted:#8b9bb4; --line:#2a3548; --pass:#3ecf8e; --fail:#f07178; --to:#e6c07b; --rep:#7aa2f7; }
   * { box-sizing:border-box; }
@@ -171,7 +171,7 @@ export function renderSmokeHtml(opts: {
 </head>
 <body>
 <header>
-  <h1>DUT Smoke Report — ${esc(profile)}</h1>
+  <h1>Orchestrator Smoke Report — ${esc(profile)}</h1>
   <div class="sum">PASS ${passed} · FAIL/TIMEOUT ${failed} · REPORT ${report} · total ${steps.length}</div>
 </header>
 <div class="bar" title="PASS / FAIL / REPORT"><i class="p"></i><i class="f"></i><i class="r"></i></div>

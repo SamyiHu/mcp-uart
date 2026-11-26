@@ -5,7 +5,7 @@ Serial Port MCP Server for AI agents. Lets Claude, Cline, Cursor, and other MCP-
 ## Features
 
 - **Structured output**: critical tools return MCP `structuredContent` + human text, so agents can read exact fields (`verdict`, `frames[i].bytes[j]`, …) without parsing prose
-- **Precise extract**: `serial_extract` / `dut_extract` pull one value via a path (`last.raw`, `rx.count`, `frames[1].bytes[2]`)
+- **Precise extract**: `serial_extract` / `orchestrator_extract` pull one value via a path (`last.raw`, `rx.count`, `frames[1].bytes[2]`)
 - **Filters**: `direction` / `matchHex` / `matchText` / `minLength` / `lastOnly` / `offset` on read & wait
 - **HTML visualize**: `serial_visualize` (TX/RX timeline) and `serial_visualize_smoke` (PASS/FAIL report)
 - **UART Hub host UI**: `mcp-uart-hub` local web app — config sidebar + live SSE monitor on one page
@@ -13,9 +13,9 @@ Serial Port MCP Server for AI agents. Lets Claude, Cline, Cursor, and other MCP-
 - **6 Protocols**: Raw, Line, Custom delimiter, Modbus RTU, Hex frame, SLIP (RFC 1055)
 - **Smart Wait**: `serial_wait` collects a full device response (silence detection), `serial_wait_frame` returns on first frame
 - **File Logging**: `serial_start_monitor` logs to a file (no popup by default)
-- **DUT Profile-Driven Testing**: chip logic lives in `src/dut/profiles/*.json` (frame-demo etc.)
+- **Orchestrator Profile-Driven Testing**: chip logic lives in `src/orchestrator/profiles/*.json` (frame-demo etc.)
 
-> `serial_open` / `dut_connect` default `autoMonitor=false` (no terminal popup). Set `autoMonitor=true` for human debugging.
+> `serial_open` / `orchestrator_connect` default `autoMonitor=false` (no terminal popup). Set `autoMonitor=true` for human debugging.
 
 ## DeepSeek Harness (DSH) plugin
 
@@ -24,7 +24,7 @@ One bundle, `@local/dsh-uart`, with two rows on the plugin page:
 | Row | Provides |
 |---|---|
 | `@local/dsh-uart` | Panel (sidebar → **串口**): port picker, live TX/RX tape, filters, send box, DTR/RTS/Break, plus the local Hub it starts as a child process |
-| `@local/dsh-uart/tools` | Agent tools: `uart_serial`, `uart_dut`, `uart_view` |
+| `@local/dsh-uart/tools` | Agent tools: `uart_serial`, `uart_orchestrator`, `uart_view` |
 
 The Hub is a `dist/hub.js` child process owned by the panel row and stopped on
 unload; `/uart/*` proxies to it, and the tools call the same Hub over HTTP, so
@@ -46,7 +46,7 @@ dsh-plugin/
 
 External (non-DSH) users get the standard MCP surface: `node dist/index.js` is a
 full MCP server with the same three grouped tools
-(`uart_serial` / `uart_dut` / `uart_view`), independent of this bundle.
+(`uart_serial` / `uart_orchestrator` / `uart_view`), independent of this bundle.
 See `dsh-plugin/DESIGN-dual-mode-tools.md` for the design and its verification.
 
 The console UI itself lives in **one** file, `src/hub/public/uart-ui.js` (framework-free
@@ -211,10 +211,10 @@ serial_extract({ connectionId, path: "rx.count" })
 serial_read({ connectionId, direction: "rx", matchHex: "AA55", lastOnly: true })
   → only the newest RX frame containing AA 55
 
-dut_extract({ connectionId, name: "io_output", path: "frames[-1].bytes[2]" })
+orchestrator_extract({ connectionId, name: "io_output", path: "frames[-1].bytes[2]" })
   → 85   # 0x55
 
-dut_smoke → structuredContent.steps[i].frames[j].bytes[]
+orchestrator_smoke → structuredContent.steps[i].frames[j].bytes[]
 serial_visualize_smoke({ profile, steps, outputPath: "smoke.html" })
 ```
 
@@ -247,7 +247,7 @@ UART_HUB=1 node dist/index.js   # or just start via your MCP client
 
 Open the printed `UART Hub UI:` URL in a browser:
 
-- When Agent uses `serial_open` / `dut_connect`, the page **auto-attaches** and shows the same TX/RX live.
+- When Agent uses `serial_open` / `orchestrator_connect`, the page **auto-attaches** and shows the same TX/RX live.
 - Page 「断开」 only **stops watching**; it will not close an MCP-owned COM.
 - You can also open a port from the page (Hub owns it); Agent tools use the same manager.
 
@@ -288,44 +288,44 @@ Offline tests: `npm run test:hub`
 | `hex-frame` | Extract between configurable start/end markers |
 | `slip` | SLIP RFC 1055 de-framing |
 
-## DUT Profile-Driven Testing (FT/产测)
+## Orchestrator Profile-Driven Testing (FT/产测)
 
-On top of the generic serial tools, this server ships a **profile-driven DUT test runner**. Chip-specific knowledge lives only in `src/dut/profiles/*.json` (serial params, frame format, checksum algorithm, command table, pass/fail rules, smoke sequence) — the engine is chip-agnostic. Supporting a new chip = drop a new JSON profile, zero core-code changes.
+On top of the generic serial tools, this server ships a **profile-driven Orchestrator test runner**. Chip-specific knowledge lives only in `src/orchestrator/profiles/*.json` (serial params, frame format, checksum algorithm, command table, pass/fail rules, smoke sequence) — the engine is chip-agnostic. Supporting a new chip = drop a new JSON profile, zero core-code changes.
 
 Tools:
 
 | Tool | Description |
 |------|-------------|
-| `dut_list_profiles` | List profiles + their command tables (entry point) |
-| `uart_dut` (action=connect) | Open port AND attach protocol session (e.g. frame-demo: 115200 8N1, 4-byte frames, 0xFF-sum checksum) |
-| `dut_test` | Run one named test with auto judgment; `format=structured\|human` |
-| `dut_extract` | Run a test then extract one field via path |
-| `dut_cmd` | Raw framed command (checksum auto-appended), no judgment |
-| `dut_smoke` | Run smoke sequence; structured `steps[]` for visualization |
-| `dut_sequence` | Free-form orchestrator: poll / signals / repeat / clear-state + frame ops (25s budget) |
-| `dut_status` | Session stats: frames parsed/sent, noise bytes, last frames |
-| `dut_send_raw` | Raw bytes without framing (echo bytes, out-of-protocol) |
-| `dut_disconnect` | Detach session + close port |
+| `orchestrator_list_profiles` | List profiles + their command tables (entry point) |
+| `uart_orchestrator` (action=connect) | Open port AND attach protocol session (e.g. frame-demo: 115200 8N1, 4-byte frames, 0xFF-sum checksum) |
+| `orchestrator_test` | Run one named test with auto judgment; `format=structured\|human` |
+| `orchestrator_extract` | Run a test then extract one field via path |
+| `orchestrator_cmd` | Raw framed command (checksum auto-appended), no judgment |
+| `orchestrator_smoke` | Run smoke sequence; structured `steps[]` for visualization |
+| `orchestrator_sequence` | Free-form orchestrator: poll / signals / repeat / clear-state + frame ops (25s budget) |
+| `orchestrator_status` | Session stats: frames parsed/sent, noise bytes, last frames |
+| `orchestrator_send_raw` | Raw bytes without framing (echo bytes, out-of-protocol) |
+| `orchestrator_disconnect` | Detach session + close port |
 
 Example flow (frame-demo on FPGA):
 
 ```
-"列出可用的 DUT profile"          -> dut_list_profiles
-"用 COM5 连接 frame-demo"          -> uart_dut(action=connect, path=COM5, profile=frame-demo)
-"跑一遍冒烟"                      -> dut_smoke
+"列出可用的 Orchestrator profile"          -> orchestrator_list_profiles
+"用 COM5 连接 frame-demo"          -> uart_orchestrator(action=connect, path=COM5, profile=frame-demo)
+"跑一遍冒烟"                      -> orchestrator_smoke
 "导出冒烟报告 HTML"               -> serial_visualize_smoke(profile, steps)
-"测 P2 口输出高 0x55"             -> dut_test(io_output, cmd=0x15, p1=0xFF, p2=0x55)
-"只要结果帧第3字节"               -> dut_extract(..., path="frames[1].bytes[2]")
-"发原始命令 0F 04 00"             -> dut_cmd(cmd=15, p1=4, p2=0)
-"IDLE 唤醒延迟"                   -> dut_sequence([send-frame 0x01, wait 8, clear-state, poll twoPhase match 0F00])
+"测 P2 口输出高 0x55"             -> orchestrator_test(io_output, cmd=0x15, p1=0xFF, p2=0x55)
+"只要结果帧第3字节"               -> orchestrator_extract(..., path="frames[1].bytes[2]")
+"发原始命令 0F 04 00"             -> orchestrator_cmd(cmd=15, p1=4, p2=0)
+"IDLE 唤醒延迟"                   -> orchestrator_sequence([send-frame 0x01, wait 8, clear-state, poll twoPhase match 0F00])
 "画时序图"                        -> serial_visualize(connectionId)
 ```
 
 Offline tests:
 
 ```bash
-npm test              # dut + extract/visualize + hub + sequence
-npm run test:dut
+npm test              # orchestrator + extract/visualize + hub + sequence
+npm run test:orchestrator
 npm run test:extract
 npm run test:hub
 npm run test:sequence

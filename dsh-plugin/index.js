@@ -5,7 +5,7 @@
  *   1. starts the local Hub (`dist/hub.js`) as a child process on activation and
  *      stops it when the plugin unloads;
  *   2. proxies the browser panel to that Hub under `/uart`, SSE included;
- *   3. registers the DSH-only agent tools (`uart_serial` / `uart_dut` /
+ *   3. registers the DSH-only agent tools (`uart_serial` / `uart_orchestrator` /
  *      `uart_view`) — three grouped tools instead of the MCP server's 28;
  *   4. exposes `/uart/agent` so the settings page can switch those tools on/off.
  *
@@ -313,7 +313,7 @@ export function apply(ctx, config) {
       // Diagnostics: which surface currently owns the model's tool list?
       if (pathname === `${ROUTE_PREFIX}/tools`) {
         const tools = ctx.get('tools')
-        const names = ['uart_serial', 'uart_dut', 'uart_view']
+        const names = ['uart_serial', 'uart_orchestrator', 'uart_view']
         const definitions = typeof tools?.definitions === 'function' ? tools.definitions() : []
         const mcpTools = definitions.filter((definition) => String(definition?.name ?? '').startsWith('mcp__uart__'))
         const nativeTools = names.filter((name) => typeof tools?.get === 'function' && Boolean(tools.get(name)))

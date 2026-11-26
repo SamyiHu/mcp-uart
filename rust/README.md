@@ -12,8 +12,8 @@ Node 版串口栈的 Rust 重写，目标：**内存从 ~45MB 降到 ~10MB 量�
 | `framing.rs` 分帧 | ✅ line / raw / delimiter / hex-frame / slip / modbus-rtu |
 | `serial.rs` 串口管理 | ✅ 打开/读写/信号/重连配置/订阅，每口一个读线程，批量裁剪缓冲 |
 | `hub.rs` HTTP + SSE | ✅ `/api/health|ports|status|frames|history|connect|write|config|signals|detach|disconnect` + `/events/stream` + 静态页 |
-| `mcp.rs` MCP stdio | 🟡 串口工具已实现（list_ports/open/write/read/status/close/set_signals）；DUT 工具待第 3 阶段 |
-| `dut.rs` DUT 引擎 | 🟡 只做了 profile 加载；判定/smoke 待第 3 阶段 |
+| `mcp.rs` MCP stdio | 🟡 串口工具已实现（list_ports/open/write/read/status/close/set_signals）；Orchestrator 工具待第 3 阶段 |
+| `orchestrator.rs` Orchestrator 引擎 | 🟡 只做了 profile 加载；判定/smoke 待第 3 阶段 |
 
 > 未编译验证：本机没有 Rust 工具链（用户自行安装）。刻意只用了 6 个常见 crate，
 > 尽量降低首次 `cargo build` 的适配成本。
@@ -76,11 +76,11 @@ node test/framing-test.mjs   # 这两组现在测的是 Node 实现
 node test/perf-test.mjs
 ```
 
-里程碑 3 完成后追加 `hub-dut-test.mjs` / `history-test.mjs` 对 Rust 端的运行。
+里程碑 3 完成后追加 `hub-orchestrator-test.mjs` / `history-test.mjs` 对 Rust 端的运行。
 
 ## 路线图
 
-- **M3** DUT：profile 判定（bytes/extraContains/echoMatches）、命令表、smoke 序列、`/api/dut*`
+- **M3** Orchestrator：profile 判定（bytes/extraContains/echoMatches）、命令表、smoke 序列、`/api/orchestrator*`
 - **M4** 打包：npm 包内放 `bin/uartd.exe`，`mcp-uart` 启动器优先用 Rust，缺失时回退 Node
 - **M5** 端口顺延、日志文件、`serial_wait` 等长轮询工具
 

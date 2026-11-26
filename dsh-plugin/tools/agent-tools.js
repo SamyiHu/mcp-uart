@@ -72,16 +72,16 @@ const serialParameters = {
   additionalProperties: false,
 }
 
-const dutParameters = {
+const orchestratorParameters = {
   type: 'object',
   properties: {
     action: {
       type: 'string',
       enum: ['list', 'connect', 'disconnect', 'run', 'smoke', 'status'],
       description:
-        'list: available DUT profiles and their commands. connect: open a profile (profile + optional path/baudRate). '
-        + 'disconnect: end the DUT session. run: execute one command by name. smoke: run the profile smoke sequence. '
-        + 'status: DUT session state.',
+        'list: available Orchestrator profiles and their commands. connect: open a profile (profile + optional path/baudRate). '
+        + 'disconnect: end the Orchestrator session. run: execute one command by name. smoke: run the profile smoke sequence. '
+        + 'status: Orchestrator session state.',
     },
     profile: { type: 'string', description: 'Profile name, e.g. frame-demo (action=connect).' },
     path: { type: 'string', description: 'Serial port override (action=connect).' },
@@ -218,12 +218,12 @@ export function createAgentTools(hubUrl) {
     },
   }
 
-  const dut = {
-    name: 'uart_dut',
+  const orchestrator = {
+    name: 'uart_orchestrator',
     description:
-      'Run the project DUT test profiles over the UART panel session: list profiles, connect one, '
+      'Run the project Orchestrator test profiles over the UART panel session: list profiles, connect one, '
       + 'execute single commands, or run the whole smoke sequence. Profiles carry their own framing and pass/fail rules.',
-    parameters: dutParameters,
+    parameters: orchestratorParameters,
     output: {
       schema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false },
       render: (_args, value) => [{ type: 'text', text: String(value?.text ?? '') }],
@@ -232,10 +232,10 @@ export function createAgentTools(hubUrl) {
       const url = currentUrl()
       switch (args.action) {
         case 'list': {
-          const data = await callHub(url, 'api/dut')
-          if (data.available === false) throw new Error('This Hub was started without a DUT manager')
+          const data = await callHub(url, 'api/orchestrator')
+          if (data.available === false) throw new Error('This Hub was started without a Orchestrator manager')
           const profiles = Array.isArray(data.profiles) ? data.profiles : []
-          if (profiles.length === 0) return text('No DUT profiles installed.')
+          if (profiles.length === 0) return text('No Orchestrator profiles installed.')
           return text(profiles.map((p) => {
             const cmds = Array.isArray(p.commands) ? p.commands.map((c) => c.name).join(', ') : ''
             return `${p.name}: ${p.description ?? ''}\n  commands: ${cmds}`
@@ -246,16 +246,16 @@ export function createAgentTools(hubUrl) {
           const body = { profile: args.profile }
           if (args.path) body.path = args.path
           if (args.baudRate) body.baudRate = args.baudRate
-          const data = await callHub(url, 'api/dut/connect', { method: 'POST', body })
-          return text(`DUT ${args.profile} connected${data.opened ? ' (port opened)' : ' (attached to the current port)'}`)
+          const data = await callHub(url, 'api/orchestrator/connect', { method: 'POST', body })
+          return text(`Orchestrator ${args.profile} connected${data.opened ? ' (port opened)' : ' (attached to the current port)'}`)
         }
         case 'disconnect': {
-          await callHub(url, 'api/dut/disconnect', { method: 'POST', body: {} })
-          return text('DUT session closed')
+          await callHub(url, 'api/orchestrator/disconnect', { method: 'POST', body: {} })
+          return text('Orchestrator session closed')
         }
         case 'run': {
           if (!args.name) throw new Error('name is required for action=run')
-          const data = await callHub(url, 'api/dut/run', { method: 'POST', body: { name: args.name } })
+          const data = await callHub(url, 'api/orchestrator/run', { method: 'POST', body: { name: args.name } })
           const result = data.result ?? data
           const lines = [`[${result.verdict}] ${result.command ?? args.name} — ${result.title ?? ''} (${result.elapsedMs ?? 0}ms)`]
           if (Array.isArray(result.failedChecks) && result.failedChecks.length > 0) lines.push(`failed: ${result.failedChecks.join('; ')}`)
@@ -263,7 +263,7 @@ export function createAgentTools(hubUrl) {
           return text(lines.join('\n'))
         }
         case 'smoke': {
-          const data = await callHub(url, 'api/dut/smoke', { method: 'POST', body: { includeLowPower: args.includeLowPower === true }, timeoutMs: 300000 })
+          const data = await callHub(url, 'api/orchestrator/smoke', { method: 'POST', body: { includeLowPower: args.includeLowPower === true }, timeoutMs: 300000 })
           const steps = Array.isArray(data.steps) ? data.steps : []
           const head = `PASS ${data.pass ?? 0} · FAIL ${data.fail ?? 0} · REPORT ${data.report ?? 0} (${data.elapsedMs ?? 0}ms)`
           const body = steps.map((s) => `[${s.verdict}] ${s.command} — ${s.title ?? ''} (${s.elapsedMs ?? 0}ms)`).join('\n')
@@ -274,7 +274,7 @@ export function createAgentTools(hubUrl) {
           return text(`${head}\n${body}${detail}`)
         }
         case 'status': {
-          const data = await callHub(url, 'api/dut/status')
+          const data = await callHub(url, 'api/orchestrator/status')
           const status = data.status ?? {}
           return text([
             `profile: ${status.profile ?? '(none)'}`,
@@ -343,5 +343,5 @@ export function createAgentTools(hubUrl) {
     },
   }
 
-  return [serial, dut, view]
+  return [serial, orchestrator, view]
 }

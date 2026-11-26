@@ -1,7 +1,7 @@
-//! Chip-agnostic DUT protocol engine — Rust port of `src/dut/session.ts` and
-//! the judging half of `src/dut/manager.ts`.
+//! Chip-agnostic Orchestrator protocol engine — Rust port of `src/orchestrator/session.ts` and
+//! the judging half of `src/orchestrator/manager.ts`.
 //!
-//! One `DutSession` owns the raw RX byte state machine for one connection:
+//! One `OrchestratorSession` owns the raw RX byte state machine for one connection:
 //! it appends every raw byte, extracts fixed-length frames whose checksum
 //! validates (resyncing one byte at a time past noise), and keeps non-frame
 //! bytes as `extras`. Action lists from a profile are executed synchronously
@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Map, Value};
 
-use crate::model::{DutJudge, DutProfile, DutRunResult};
+use crate::model::{OrchestratorJudge, OrchestratorProfile, OrchestratorRunResult};
 use crate::serial::SerialManager;
 
 /// Accept 10, "0x0F", "15" — profiles use hex strings for readability.
@@ -70,12 +70,12 @@ struct SessionState {
     extras: Vec<u8>,
 }
 
-/// A DUT session attached to one connection. Cloneable: the raw hook and the
+/// A Orchestrator session attached to one connection. Cloneable: the raw hook and the
 /// action executor both hold a handle to the same state.
 #[derive(Clone)]
-pub struct DutSession {
+pub struct OrchestratorSession {
     state: Arc<(Mutex<SessionState>, Condvar)>,
-    profile: Arc<DutProfile>,
+    profile: Arc<OrchestratorProfile>,
     connection_id: String,
     manager: Arc<SerialManager>,
     hook_token: Arc<Mutex<Option<u64>>>,
@@ -108,9 +108,9 @@ impl SessionStats {
     }
 }
 
-impl DutSession {
+impl OrchestratorSession {
     /// Attach a raw byte hook to the connection. Caller must detach when done.
-    pub fn attach(profile: Arc<DutProfile>, connection_id: String, manager: Arc<SerialManager>) -> Arc<Self> {
+    pub fn attach(profile: Arc<OrchestratorProfile>, connection_id: String, manager: Arc<SerialManager>) -> Arc<Self> {
         let session = Arc::new(Self {
             state: Arc::new((Mutex::new(SessionState::default()), Condvar::new())),
             profile,
@@ -138,7 +138,7 @@ impl DutSession {
         self.state.1.notify_all();
     }
 
-    pub fn profile(&self) -> &DutProfile { &self.profile }
+    pub fn profile(&self) -> &OrchestratorProfile { &self.profile }
     pub fn connection_id(&self) -> &str { &self.connection_id }
     pub fn stats(&self) -> (u64, u64, u64, u64) { self.stats.snapshot() }
 
@@ -191,7 +191,7 @@ impl DutSession {
 
     /// Wait until `count` new frames arrive or the deadline passes. Returns
     /// the number of new frames actually seen.
-    fn wait_for_frames(&self, baseline: usize, count: u32, deadline: Instant) -> usize {
+    pub(crate) fn wait_for_frames(&self, baseline: usize, count: u32, deadline: Instant) -> usize {
         if count == 0 { return 0; }
         let target = baseline + count as usize;
         let (lock, cv) = &*self.state;
@@ -206,7 +206,7 @@ impl DutSession {
     }
 
     /// Wait until `hex` appears in extras+buffer, or the deadline passes.
-    fn wait_for_extra(&self, hex: &str, deadline: Instant) -> bool {
+    pub(crate) fn wait_for_extra(&self, hex: &str, deadline: Instant) -> bool {
         let clean: String = hex.chars().filter(|c| !c.is_whitespace()).collect();
         let need = parse_hex_bytes(&clean);
         let (lock, cv) = &*self.state;
@@ -222,8 +222,7 @@ impl DutSession {
         }
     }
 
-    fn build_frame(&self, cmd: u8, p1: u8, p2: u8) -> Vec<u8> {
-        let f = self.profile.frame.as_ref().expect("profile has no frame descriptor");
+    pub(crate) fn build_frame(&self, cmd: u8, p1: u8, p2: u8) -> Vec<u8> {        let f = self.profile.frame.as_ref().expect("profile has no frame descriptor");
         let mut bytes = vec![cmd, p1, p2, 0u8];
         // Profiles use length 4 with checksumIndex 3. Pad/truncate to length.
         bytes.resize(f.length, 0u8);
@@ -232,7 +231,7 @@ impl DutSession {
         bytes
     }
 
-    fn send_frame(&self, cmd: u8, p1: u8, p2: u8) -> Result<String, String> {
+    pub(crate) fn send_frame(&self, cmd: u8, p1: u8, p2: u8) -> Result<String, String> {
         let bytes = self.build_frame(cmd, p1, p2);
         let hex = bytes.iter().map(|b| format!("{:02X}", b)).collect::<String>();
         self.manager.write(&self.connection_id, &hex, Some("hex"))?;
@@ -240,13 +239,18 @@ impl DutSession {
         Ok(hex)
     }
 
-    fn send_raw(&self, hex: &str) -> Result<String, String> {
+    pub(crate) fn send_raw(&self, hex: &str) -> Result<String, String> {
         let clean: String = hex.chars().filter(|c| !c.is_whitespace()).collect();
         let bytes = parse_hex_bytes(&clean);
         let out = bytes.iter().map(|b| format!("{:02X}", b)).collect::<String>();
         self.manager.write(&self.connection_id, &out, Some("hex"))?;
         self.stats.raw_bytes_sent.fetch_add(bytes.len() as u64, Ordering::Relaxed);
         Ok(out)
+    }
+
+    /// Drive DTR/RTS/BREAK. Used by the sequence engine's signal snapshot/restore.
+    pub(crate) fn set_signals(&self, brk: Option<bool>, dtr: Option<bool>, rts: Option<bool>) -> Result<(), String> {
+        self.manager.set_signals(&self.connection_id, brk, dtr, rts)
     }
 
     /// Execute a command's action list. Returns sent hex, frames, extras,
@@ -389,8 +393,8 @@ impl DutSession {
                 // poll / expect-echo / get-result variants inside sequences use
                 // the same primitives; extended poll is handled by the sequence
                 // engine (not yet ported) — report clearly if encountered.
-                "poll" => return Err("dut action 'poll' is not supported in run_command yet".into()),
-                other => return Err(format!("unknown dut action: {other}")),
+                "poll" => return Err("orchestrator action 'poll' is not supported in run_command yet".into()),
+                other => return Err(format!("unknown orchestrator action: {other}")),
             }
         }
 
@@ -399,10 +403,10 @@ impl DutSession {
     }
 
     /// Judge the outcome against a profile command definition (manager.ts judge).
-    pub fn judge(&self, command: &crate::model::DutCommand, out: &ActionOutcome, started: Instant) -> DutRunResult {
+    pub fn judge(&self, command: &crate::model::OrchestratorCommand, out: &ActionOutcome, started: Instant) -> OrchestratorRunResult {
         let mut failed: Vec<String> = Vec::new();
         let mut verdict = "REPORT".to_string();
-        let j: Option<&DutJudge> = command.judge.as_ref();
+        let j: Option<&OrchestratorJudge> = command.judge.as_ref();
         if let Some(j) = j {
             verdict = "PASS".into();
             if out.timed_out {
@@ -490,12 +494,12 @@ impl DutSession {
             if wants_frames { verdict = "TIMEOUT".into(); }
         }
 
-        DutRunResult {
+        OrchestratorRunResult {
             command: command.name.clone(),
             title: command.title.clone(),
             verdict,
             sent: out.sent.clone(),
-            frames: out.frames.iter().map(|f| crate::model::DutFrameBytes {
+            frames: out.frames.iter().map(|f| crate::model::OrchestratorFrameBytes {
                 bytes: f.bytes.clone(),
                 timestamp: f.timestamp.clone(),
             }).collect(),
@@ -540,7 +544,7 @@ fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
 mod tests {
     use super::*;
 
-    fn profile(checksum: &str) -> DutProfile {
+    fn profile(checksum: &str) -> OrchestratorProfile {
         serde_json::from_value(json!({
             "name": "test", "chip": "generic", "description": "",
             "serial": { "baudRate": 115200 },
@@ -571,11 +575,11 @@ mod tests {
 
     #[test]
     fn frame_state_machine_with_noise_resync() {
-        // Real DutSession: inject a noise byte + a valid frame via the raw-RX
+        // Real OrchestratorSession: inject a noise byte + a valid frame via the raw-RX
         // path. Noise must land in extras, the frame must be extracted, and a
         // second valid frame after more noise must resync correctly.
         let manager = SerialManager::new();
-        let session = DutSession::attach(Arc::new(profile("sum-complement")), "c-test".into(), manager);
+        let session = OrchestratorSession::attach(Arc::new(profile("sum-complement")), "c-test".into(), manager);
         let mut frame = vec![0x03u8, 0x00, 0x00, 0];
         frame[3] = checksum_of(&frame, 3, "sum-complement");
 
@@ -612,8 +616,8 @@ mod tests {
                 "judge": { "echoMatches": true, "resultEchoesCmd": true, "bytes": { "1": 0 } }
             }]
         });
-        let p: DutProfile = serde_json::from_value(profile_json).unwrap();
-        let session = DutSession::attach(Arc::new(p), "c-judge".into(), manager);
+        let p: OrchestratorProfile = serde_json::from_value(profile_json).unwrap();
+        let session = OrchestratorSession::attach(Arc::new(p), "c-judge".into(), manager);
         let def = session.profile().commands[0].clone();
 
         // Simulate: dispatch frame echo + result frame with status 0.

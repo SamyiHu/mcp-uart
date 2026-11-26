@@ -78,11 +78,11 @@ async function main() {
   const status = await get("api/status");
   check("GET api/status lists connections", status.res.ok && Array.isArray(status.json?.connections), status.res.status);
 
-  const dut = await get("api/dut");
+  const orchestrator = await get("api/orchestrator");
   check(
-    "GET api/dut reports the DUT layer",
-    dut.res.ok && typeof dut.json?.available === "boolean" && Array.isArray(dut.json?.profiles),
-    dut.res.status,
+    "GET api/orchestrator reports the Orchestrator layer",
+    orchestrator.res.ok && typeof orchestrator.json?.available === "boolean" && Array.isArray(orchestrator.json?.profiles),
+    orchestrator.res.status,
   );
 
   const frames = await get("api/frames?limit=5");
@@ -101,7 +101,7 @@ async function main() {
   const shared = await get("static/uart-ui.js");
   check(
     "GET static/uart-ui.js serves the shared console module",
-    shared.res.ok && shared.text.includes("events/stream") && shared.text.includes("createUartUi") && shared.text.includes("api/dut"),
+    shared.res.ok && shared.text.includes("events/stream") && shared.text.includes("createUartUi") && shared.text.includes("api/orchestrator"),
     shared.res.status,
   );
 

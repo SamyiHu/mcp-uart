@@ -1,31 +1,31 @@
 /**
- * DUT façade for the Hub.
+ * Orchestrator façade for the Hub.
  *
- * The Hub speaks ports and frames; the DUT layer speaks profiles (frame format,
+ * The Hub speaks ports and frames; the Orchestrator layer speaks profiles (frame format,
  * command table, judge rules). This adapter is the single place that answers
  * "which connection?" — the agent and the panel share one session, so a call
- * either names a connection or inherits whichever one holds a DUT session.
+ * either names a connection or inherits whichever one holds a Orchestrator session.
  *
  * A panel-owned connect opens the port with the profile's serial settings and
- * the same hex/raw framing the MCP `dut_connect` tool uses, so a session
+ * the same hex/raw framing the MCP `orchestrator_connect` tool uses, so a session
  * started from the panel behaves exactly like one started by the agent.
  */
 import type { SerialManager } from "../serial-manager.js";
-import { DutManager } from "../dut/manager.js";
-import { allProfiles, getProfile } from "../dut/profiles/index.js";
+import { OrchestratorManager } from "../orchestrator/manager.js";
+import { allProfiles, getProfile } from "../orchestrator/profiles/index.js";
 import type { BaudRate, DataBits, Parity, SerialConfig, StopBits } from "../types.js";
-import type { DutRunResult } from "../dut/types.js";
-import type { DutEvent, DutProfileSummary, DutSmokeResult, DutStatus, HubDut } from "./backend.js";
+import type { OrchestratorRunResult } from "../orchestrator/types.js";
+import type { OrchestratorEvent, OrchestratorProfileSummary, OrchestratorSmokeResult, OrchestratorStatus, HubOrchestrator } from "./backend.js";
 
 /**
- * The port settings `dut_connect` uses: profile baud, decoded text, raw framing.
+ * The port settings `orchestrator_connect` uses: profile baud, decoded text, raw framing.
  *
  * `encoding` used to be "hex", which made `SerialMessage.data` a hex STRING
  * identical to `raw`. Every consumer that wanted text (the console's ASCII
- * column, `serial_read`, `serial_extract`) then saw hex twice. The DUT engine
+ * column, `serial_read`, `serial_extract`) then saw hex twice. The Orchestrator engine
  * itself reads raw bytes through a data hook, so it is unaffected by this.
  */
-export function dutSerialConfig(
+export function orchestratorSerialConfig(
   path: string,
   profileName: string,
   baudRate?: number
@@ -47,22 +47,22 @@ export function dutSerialConfig(
   };
 }
 
-export function createDutBackend(dut: DutManager, manager: SerialManager): HubDut {
+export function createOrchestratorBackend(orchestrator: OrchestratorManager, manager: SerialManager): HubOrchestrator {
   /** One long-running run at a time: the serial line is single-owner. */
   let busy: null | "smoke" = null;
 
   function pickConnection(preferred?: string | null): string | null {
-    if (preferred && dut.hasSession(preferred)) return preferred;
-    const sessions = dut.listSessions();
+    if (preferred && orchestrator.hasSession(preferred)) return preferred;
+    const sessions = orchestrator.listSessions();
     return sessions.length > 0 ? sessions[0].connectionId : null;
   }
 
-  function status(preferred?: string | null): DutStatus {
+  function status(preferred?: string | null): OrchestratorStatus {
     const connectionId = pickConnection(preferred);
     if (connectionId === null) {
       return { connected: false, connectionId: null, profile: null, chip: null, port: null, baudRate: null, stats: null };
     }
-    const session = dut.getSession(connectionId);
+    const session = orchestrator.getSession(connectionId);
     let port: string | null = null;
     let baudRate: number | null = null;
     try {
@@ -70,7 +70,7 @@ export function createDutBackend(dut: DutManager, manager: SerialManager): HubDu
       port = info.config.path;
       baudRate = info.config.baudRate;
     } catch {
-      /* connection gone but session not cleaned up yet — keep the DUT view usable */
+      /* connection gone but session not cleaned up yet — keep the Orchestrator view usable */
     }
     return {
       connected: true,
@@ -85,14 +85,14 @@ export function createDutBackend(dut: DutManager, manager: SerialManager): HubDu
 
   function requireConnection(preferred?: string | null): string {
     const connectionId = pickConnection(preferred);
-    if (connectionId === null) throw new Error("No DUT session. Pick a profile and connect first.");
+    if (connectionId === null) throw new Error("No Orchestrator session. Pick a profile and connect first.");
     return connectionId;
   }
 
   return {
     busy: () => busy !== null,
 
-    profiles(): DutProfileSummary[] {
+    profiles(): OrchestratorProfileSummary[] {
       return allProfiles().map((profile) => ({
         name: profile.name,
         chip: profile.chip,
@@ -122,14 +122,14 @@ export function createDutBackend(dut: DutManager, manager: SerialManager): HubDu
       const connectionId = options.connectionId ?? null;
       if (connectionId !== null) {
         // Attach to a port that is already open (MCP opened it, or the panel did).
-        if (!dut.hasSession(connectionId)) dut.attach(connectionId, options.profile);
+        if (!orchestrator.hasSession(connectionId)) orchestrator.attach(connectionId, options.profile);
         return { connectionId, opened: false, status: status(connectionId) };
       }
-      if (!options.path) throw new Error("path is required to open a DUT port");
-      const config = dutSerialConfig(options.path, options.profile, options.baudRate);
+      if (!options.path) throw new Error("path is required to open a Orchestrator port");
+      const config = orchestratorSerialConfig(options.path, options.profile, options.baudRate);
       const opened = await manager.open(config);
       try {
-        dut.attach(opened.connectionId, options.profile);
+        orchestrator.attach(opened.connectionId, options.profile);
       } catch (error) {
         await manager.close(opened.connectionId).catch(() => undefined);
         throw error;
@@ -140,22 +140,22 @@ export function createDutBackend(dut: DutManager, manager: SerialManager): HubDu
     async disconnect(options = {}) {
       const connectionId = pickConnection(options.connectionId);
       if (connectionId === null) return;
-      if (dut.hasSession(connectionId)) dut.detach(connectionId);
+      if (orchestrator.hasSession(connectionId)) orchestrator.detach(connectionId);
       if (options.closePort === true) await manager.close(connectionId);
     },
 
     async runCommand(name, connectionId) {
       if (busy !== null) throw new Error("A smoke run is already in progress.");
-      return dut.runCommand(requireConnection(connectionId), name);
+      return orchestrator.runCommand(requireConnection(connectionId), name);
     },
 
-    async runSmoke(options, onEvent?: (event: DutEvent) => void): Promise<DutSmokeResult> {
+    async runSmoke(options, onEvent?: (event: OrchestratorEvent) => void): Promise<OrchestratorSmokeResult> {
       const connectionId = requireConnection(options.connectionId);
       if (busy !== null) throw new Error("A smoke run is already in progress.");
       busy = "smoke";
       const started = Date.now();
       try {
-        const result = await dut.runSmoke(connectionId, options.includeLowPower === true, {
+        const result = await orchestrator.runSmoke(connectionId, options.includeLowPower === true, {
           onStart: (total, profile) => onEvent?.({ kind: "smoke-start", profile, total }),
           onStep: (step, index, total) => onEvent?.({ kind: "smoke-step", index, total, step }),
         });

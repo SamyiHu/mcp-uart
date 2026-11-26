@@ -9,18 +9,18 @@
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
-import type { DutProfile } from "../types.js";
+import type { OrchestratorProfile } from "../types.js";
 
-let cache: Record<string, DutProfile> | null = null;
+let cache: Record<string, OrchestratorProfile> | null = null;
 
 function profilesDir(): string {
-  // dist/dut/profiles/index.js -> dist/dut/profiles/  (built)
-  // src/dut/profiles/index.ts -> src/dut/profiles/    (dev)
+  // dist/orchestrator/profiles/index.js -> dist/orchestrator/profiles/  (built)
+  // src/orchestrator/profiles/index.ts -> src/orchestrator/profiles/    (dev)
   return path.dirname(fileURLToPath(import.meta.url));
 }
 
-function loadProfiles(): Record<string, DutProfile> {
-  const result: Record<string, DutProfile> = {};
+function loadProfiles(): Record<string, OrchestratorProfile> {
+  const result: Record<string, OrchestratorProfile> = {};
   let files: string[] = [];
   try {
     files = fs.readdirSync(profilesDir()).filter((f) => f.endsWith(".json"));
@@ -29,20 +29,20 @@ function loadProfiles(): Record<string, DutProfile> {
   }
   for (const f of files) {
     try {
-      const p = JSON.parse(fs.readFileSync(path.join(profilesDir(), f), "utf-8")) as DutProfile;
+      const p = JSON.parse(fs.readFileSync(path.join(profilesDir(), f), "utf-8")) as OrchestratorProfile;
       if (!p.name || !p.frame || !Array.isArray(p.commands)) {
-        console.error(`[dut] profile ${f} missing name/frame/commands — skipped`);
+        console.error(`[orchestrator] profile ${f} missing name/frame/commands — skipped`);
         continue;
       }
       result[p.name] = p;
     } catch (e: any) {
-      console.error(`[dut] failed to parse profile ${f}: ${e.message}`);
+      console.error(`[orchestrator] failed to parse profile ${f}: ${e.message}`);
     }
   }
   return result;
 }
 
-function profiles(): Record<string, DutProfile> {
+function profiles(): Record<string, OrchestratorProfile> {
   if (!cache) cache = loadProfiles();
   return cache;
 }
@@ -54,15 +54,15 @@ export function reloadProfiles(): number {
 }
 
 /** Every loaded profile (panel/profile browser); insertion order of the directory. */
-export function allProfiles(): DutProfile[] {
+export function allProfiles(): OrchestratorProfile[] {
   return Object.values(profiles());
 }
 
-export function getProfile(name: string): DutProfile {
+export function getProfile(name: string): OrchestratorProfile {
   const p = profiles()[name];
   if (!p) {
     throw new Error(
-      `Unknown DUT profile '${name}'. Available: ${Object.keys(profiles()).join(", ") || "(none)"}`
+      `Unknown Orchestrator profile '${name}'. Available: ${Object.keys(profiles()).join(", ") || "(none)"}`
     );
   }
   return p;

@@ -1,7 +1,7 @@
 {
   "name": "mcp-uart",
   "version": "1.5.0",
-  "description": "Serial Port MCP Server for AI agents — structured tools, dut_sequence orchestrator, Hub UI, profile-driven DUT runner",
+  "description": "Serial Port MCP Server for AI agents — structured tools, orchestrator_sequence orchestrator, Hub UI, profile-driven Orchestrator runner",
   "main": "dist/index.js",
   "type": "module",
   "bin": {
@@ -16,10 +16,10 @@
     "hub": "node dist/hub.js",
     "dev": "tsc --watch",
     "prepare": "npm run build",
-    "test:dut": "node test/dut-offline-test.mjs",
+    "test:orchestrator": "node test/orchestrator-offline-test.mjs",
     "test:extract": "node test/extract-visualize-test.mjs",
     "test:hub": "node test/hub-api-test.mjs",
-    "test:hub-dut": "node test/hub-dut-test.mjs",
+    "test:hub-orchestrator": "node test/hub-orchestrator-test.mjs",
     "test:sequence": "node test/sequence-test.mjs",
     "test:encoding": "node test/encoding-test.mjs",
     "test:framing": "node test/framing-test.mjs",
@@ -27,10 +27,10 @@
     "test:history": "node test/history-test.mjs",
     "test:perf": "node test/perf-test.mjs",
     "test:dsh": "node test/dsh-client-test.mjs",
-    "test": "npm run test:dut && npm run test:extract && npm run test:hub && npm run test:hub-dut && npm run test:sequence && npm run test:encoding && npm run test:framing && npm run test:payload && npm run test:history && npm run test:perf && npm run test:takeover && npm run test:dsh && npm run test:dsh-tools && npm run test:dut-rust",
+    "test": "npm run test:orchestrator && npm run test:extract && npm run test:hub && npm run test:hub-orchestrator && npm run test:sequence && npm run test:encoding && npm run test:framing && npm run test:payload && npm run test:history && npm run test:perf && npm run test:takeover && npm run test:dsh && npm run test:dsh-tools && npm run test:orchestrator-rust",
     "test:dsh-tools": "node test/dsh-agent-tools-test.mjs",
     "test:takeover": "node test/hub-takeover-test.mjs",
-    "test:dut-rust": "node test/dut-rust-test.mjs"
+    "test:orchestrator-rust": "node test/orchestrator-rust-test.mjs"
   },
   "files": [
     "dist",

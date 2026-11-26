@@ -1,4 +1,4 @@
-// 低功耗时序测试：发命令后轮询，测出 DUT 静默多久后恢复
+// 低功耗时序测试：发命令后轮询，测出 Orchestrator 静默多久后恢复
 // 0x07 = WDT+STOP（WDT 500ms 溢出复位）; 0x0A = BTM+STOP
 import { SerialPort } from "serialport";
 
@@ -43,7 +43,7 @@ p.open(async (err) => {
     if (seg.includes("0F00")) { recoveredAt = Date.now() - t0; console.log(`[t=${recoveredAt}ms] 恢复应答 ✓  ${seg}`); break; }
     if (i === 5) console.log(`[t=${Date.now()-t0}ms] 仍静默（符合已进 STOP）`);
   }
-  if (recoveredAt === null) console.log(`[t=${Date.now()-t0}ms] 30 次轮询内未恢复 ✗ → DUT 仍卡在 STOP`);
+  if (recoveredAt === null) console.log(`[t=${Date.now()-t0}ms] 30 次轮询内未恢复 ✗ → Orchestrator 仍卡在 STOP`);
   console.log(`\n>>> ${label}: ${recoveredAt !== null ? `静默约 ${recoveredAt}ms 后恢复` : "未恢复（需复位）"}`);
   p.close();
   process.exit(0);

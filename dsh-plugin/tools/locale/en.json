@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Serial tools",
-    "description": "Serial tools for the Agent: uart_serial (connect and transfer), uart_dut (profiles and smoke runs), uart_view (frames and history), all driving the same serial session through the Hub started by the panel."
+    "description": "Serial tools for the Agent: uart_serial (connect and transfer), uart_orchestrator (profiles and smoke runs), uart_view (frames and history), all driving the same serial session through the Hub started by the panel."
   }
 }

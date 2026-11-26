@@ -9,7 +9,7 @@ import * as http from "http";
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
-import type { HubBackend, HubDut, HubFrame } from "./backend.js";
+import type { HubBackend, HubOrchestrator, HubFrame } from "./backend.js";
 import type { ConnectionInfo, MessageFilter, SerialConfig } from "../types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -19,8 +19,8 @@ const HUB_STARTED_AT = new Date().toISOString();
 
 export type HubOptions = {
   backend: HubBackend;
-  /** DUT profile layer over the same serial manager (panel DUT page). Omit for serial-only hubs. */
-  dut?: HubDut | null;
+  /** Orchestrator profile layer over the same serial manager (panel Orchestrator page). Omit for serial-only hubs. */
+  orchestrator?: HubOrchestrator | null;
   host?: string;
   port?: number;
   /** Max frames retained for SSE/history (default 2000) */
@@ -125,7 +125,7 @@ async function openWithRetry(
 
 export async function createHub(opts: HubOptions): Promise<HubHandle> {
   const backend = opts.backend;
-  const dut = opts.dut ?? null;
+  const orchestrator = opts.orchestrator ?? null;
   const host = opts.host ?? "127.0.0.1";
   const maxFrames = opts.maxFrames ?? 2000;
   const publicDir =
@@ -301,12 +301,12 @@ export async function createHub(opts: HubOptions): Promise<HubHandle> {
           ownsPort,
           frameCount: frames.length,
           seq,
-          dut: dut !== null,
+          orchestrator: orchestrator !== null,
           // Identity of this process, so a client can tell a freshly started
           // Hub from an orphan left behind by an older run and pick the newest.
           pid: process.pid,
           startedAt: HUB_STARTED_AT,
-          features: { history: true, dut: dut !== null },
+          features: { history: true, orchestrator: orchestrator !== null },
         });
         return;
       }
@@ -333,38 +333,38 @@ export async function createHub(opts: HubOptions): Promise<HubHandle> {
         return;
       }
 
-      if (pathname === "/api/dut" || pathname.startsWith("/api/dut/")) {
-        if (dut === null) {
-          if (req.method === "GET" && (pathname === "/api/dut" || pathname === "/api/dut/status")) {
+      if (pathname === "/api/orchestrator" || pathname.startsWith("/api/orchestrator/")) {
+        if (orchestrator === null) {
+          if (req.method === "GET" && (pathname === "/api/orchestrator" || pathname === "/api/orchestrator/status")) {
             json(res, 200, { ok: true, available: false, profiles: [], status: null, active: null });
             return;
           }
-          json(res, 501, { ok: false, error: "This Hub was started without a DUT manager" });
+          json(res, 501, { ok: false, error: "This Hub was started without a Orchestrator manager" });
           return;
         }
 
-        if (req.method === "GET" && pathname === "/api/dut") {
+        if (req.method === "GET" && pathname === "/api/orchestrator") {
           json(res, 200, {
             ok: true,
             available: true,
-            profiles: dut.profiles(),
-            status: dut.status(activeConnectionId),
+            profiles: orchestrator.profiles(),
+            status: orchestrator.status(activeConnectionId),
             active: activeSummary(),
           });
           return;
         }
 
-        if (req.method === "GET" && pathname === "/api/dut/status") {
+        if (req.method === "GET" && pathname === "/api/orchestrator/status") {
           json(res, 200, {
             ok: true,
             available: true,
-            status: dut.status(activeConnectionId),
+            status: orchestrator.status(activeConnectionId),
             active: activeSummary(),
           });
           return;
         }
 
-        if (req.method === "POST" && pathname === "/api/dut/connect") {
+        if (req.method === "POST" && pathname === "/api/orchestrator/connect") {
           const body = await readJson<{
             profile?: string;
             path?: string;
@@ -377,7 +377,7 @@ export async function createHub(opts: HubOptions): Promise<HubHandle> {
           }
           // Prefer the session already open (shared with the Agent) over a second port.
           const target = body.connectionId ?? activeConnectionId ?? null;
-          const result = await dut.connect({
+          const result = await orchestrator.connect({
             profile: body.profile,
             path: body.path,
             baudRate: body.baudRate,
@@ -396,52 +396,52 @@ export async function createHub(opts: HubOptions): Promise<HubHandle> {
           return;
         }
 
-        if (req.method === "POST" && pathname === "/api/dut/disconnect") {
+        if (req.method === "POST" && pathname === "/api/orchestrator/disconnect") {
           const body = await readJson<{ closePort?: boolean }>(req);
           const id = activeConnectionId;
           const closePort = body.closePort === true && ownsPort;
-          await dut.disconnect({ connectionId: id, closePort: false });
+          await orchestrator.disconnect({ connectionId: id, closePort: false });
           if (closePort) await detachConnection(true);
           json(res, 200, {
             ok: true,
-            status: dut.status(activeConnectionId),
+            status: orchestrator.status(activeConnectionId),
             active: activeSummary(),
           });
           return;
         }
 
-        if (req.method === "POST" && pathname === "/api/dut/run") {
+        if (req.method === "POST" && pathname === "/api/orchestrator/run") {
           const body = await readJson<{ name?: string }>(req);
           if (!body.name) {
             json(res, 400, { ok: false, error: "name is required" });
             return;
           }
-          if (!dut.status(activeConnectionId).connected) {
-            json(res, 409, { ok: false, error: "No DUT session. Connect a profile first." });
+          if (!orchestrator.status(activeConnectionId).connected) {
+            json(res, 409, { ok: false, error: "No Orchestrator session. Connect a profile first." });
             return;
           }
-          if (dut.busy()) {
+          if (orchestrator.busy()) {
             json(res, 409, { ok: false, error: "A smoke run is already in progress" });
             return;
           }
-          const result = await dut.runCommand(body.name, activeConnectionId);
+          const result = await orchestrator.runCommand(body.name, activeConnectionId);
           json(res, 200, { ok: true, result });
           return;
         }
 
-        if (req.method === "POST" && pathname === "/api/dut/smoke") {
+        if (req.method === "POST" && pathname === "/api/orchestrator/smoke") {
           const body = await readJson<{ includeLowPower?: boolean }>(req);
-          if (!dut.status(activeConnectionId).connected) {
-            json(res, 409, { ok: false, error: "No DUT session. Connect a profile first." });
+          if (!orchestrator.status(activeConnectionId).connected) {
+            json(res, 409, { ok: false, error: "No Orchestrator session. Connect a profile first." });
             return;
           }
-          if (dut.busy()) {
+          if (orchestrator.busy()) {
             json(res, 409, { ok: false, error: "A smoke run is already in progress" });
             return;
           }
-          const result = await dut.runSmoke(
+          const result = await orchestrator.runSmoke(
             { includeLowPower: body.includeLowPower === true, connectionId: activeConnectionId },
-            (event) => broadcast("dut", event, activeConnectionId)
+            (event) => broadcast("orchestrator", event, activeConnectionId)
           );
           json(res, 200, { ok: true, result });
           return;

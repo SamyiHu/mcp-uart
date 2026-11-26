@@ -1,5 +1,5 @@
 /**
- * Chip-agnostic DUT protocol session.
+ * Chip-agnostic Orchestrator protocol session.
  *
  * Owns the byte-stream state machine for one connection: appends every raw
  * RX byte, extracts frames of `profile.frame.length` whose checksum
@@ -9,8 +9,8 @@
  */
 import type { SerialManager } from "../serial-manager.js";
 import type {
-  DutAction,
-  DutProfile,
+  OrchestratorAction,
+  OrchestratorProfile,
   ParsedFrame,
 } from "./types.js";
 
@@ -22,7 +22,7 @@ export function num(v: number | string | undefined, fallback = 0): number {
   return (isNaN(n) ? fallback : n) & 0xff;
 }
 
-export function checksumOf(bytes: number[], profile: DutProfile): number {
+export function checksumOf(bytes: number[], profile: OrchestratorProfile): number {
   const f = profile.frame;
   let acc = 0;
   for (let i = 0; i < bytes.length; i++) {
@@ -54,8 +54,8 @@ type ExtraWaiter = {
   hex: string;
 };
 
-export class DutSession {
-  readonly profile: DutProfile;
+export class OrchestratorSession {
+  readonly profile: OrchestratorProfile;
   readonly connectionId: string;
   private manager: SerialManager;
   private buf: number[] = [];
@@ -66,7 +66,7 @@ export class DutSession {
   private rxHook = (data: Buffer) => this.onRx(data);
   stats = { framesParsed: 0, noiseBytes: 0, framesSent: 0, rawBytesSent: 0 };
 
-  constructor(profile: DutProfile, connectionId: string, manager: SerialManager) {
+  constructor(profile: OrchestratorProfile, connectionId: string, manager: SerialManager) {
     this.profile = profile;
     this.connectionId = connectionId;
     this.manager = manager;
@@ -179,7 +179,7 @@ export class DutSession {
     return buf.toString("hex").toUpperCase();
   }
 
-  /** Break pulse on TX = falling edge on the DUT's RX wake pin. */
+  /** Break pulse on TX = falling edge on the Orchestrator's RX wake pin. */
   async wakePulse(ms = 2): Promise<void> {
     await this.manager.setSignals(this.connectionId, { break: true });
     await sleep(ms);
@@ -239,11 +239,11 @@ export class DutSession {
 
   /**
    * Run a command's action list. `overrides` replace the first send-frame's
-   * cmd/p1/p2 (how dut_test parameterizes profile commands).
+   * cmd/p1/p2 (how orchestrator_test parameterizes profile commands).
    * Returns collected frames + extras and the hex of everything we sent.
    */
   async runActions(
-    actions: DutAction[],
+    actions: OrchestratorAction[],
     overrides?: { cmd?: number; p1?: number; p2?: number }
   ): Promise<{ sent: string[]; frames: ParsedFrame[]; extras: number[]; firstCmd: number | null; timedOut: boolean }> {
     this.reset();
@@ -270,7 +270,7 @@ export class DutSession {
         }
         case "expect-echo": {
           // Wait for the frame that byte-equals what we dispatched. Stale
-          // frames from a desynced DUT are DISCARDED (moved to extras) so
+          // frames from a desynced Orchestrator are DISCARDED (moved to extras) so
           // frame indexes stay stable (0=echo, 1+=results). If nothing
           // matches, re-dispatch — the original may have been swallowed as
           // a leftover handshake by a previous test.
@@ -300,7 +300,7 @@ export class DutSession {
           break;
         }
         case "handshake": {
-          // Resend the last dispatched frame: the DUT reads it inside
+          // Resend the last dispatched frame: the Orchestrator reads it inside
           // Send_Read_N_Byte and only then replies with the result.
           if (!lastFrame) throw new Error("handshake action before any send-frame");
           sent.push(await this.sendFrame(lastFrame.cmd, lastFrame.p1, lastFrame.p2));

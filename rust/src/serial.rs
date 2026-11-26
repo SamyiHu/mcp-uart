@@ -35,7 +35,7 @@ pub struct SerialManager {
     inner: Mutex<HashMap<String, Conn>>,
     subscribers: Mutex<Vec<mpsc::Sender<(String, SerialMessage)>>>,
     /// Raw RX byte hooks, keyed by connection id. Each hook gets the raw chunk
-    /// before framing/decoding — the DUT engine needs bytes to parse its own
+    /// before framing/decoding — the Orchestrator engine needs bytes to parse its own
     /// frames and checksum. `u64` is a registration token for removal.
     raw_hooks: Mutex<HashMap<String, Vec<(u64, Arc<dyn Fn(&[u8]) + Send + Sync>)>>>,
     next_hook: AtomicU64,
@@ -209,7 +209,7 @@ impl SerialManager {
                 Ok(n) => {
                     clock.mark();
                     let bytes = &chunk[..n];
-                    // Raw hooks (DUT byte parser) see bytes before framing.
+                    // Raw hooks (Orchestrator byte parser) see bytes before framing.
                     self.dispatch_raw(&id, bytes);
                     let frames = framer.push(bytes, false);
                     for frame in frames {

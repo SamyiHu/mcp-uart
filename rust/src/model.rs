@@ -113,20 +113,20 @@ pub struct PortInfo {
     pub product_id: Option<String>,
 }
 
-/// DUT profile as stored in `profiles/*.json`.
+/// Orchestrator profile as stored in `profiles/*.json`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DutProfile {
+pub struct OrchestratorProfile {
     pub name: String,
     #[serde(default)]
     pub chip: String,
     #[serde(default)]
     pub description: String,
-    pub serial: DutSerial,
+    pub serial: OrchestratorSerial,
     #[serde(default)]
-    pub frame: Option<DutFrame>,
+    pub frame: Option<OrchestratorFrame>,
     #[serde(default)]
-    pub commands: Vec<DutCommand>,
+    pub commands: Vec<OrchestratorCommand>,
     #[serde(default)]
     pub smoke: Vec<String>,
     #[serde(default)]
@@ -135,7 +135,7 @@ pub struct DutProfile {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DutSerial {
+pub struct OrchestratorSerial {
     #[serde(default = "default_baud")]
     pub baud_rate: u32,
     pub data_bits: Option<u8>,
@@ -148,7 +148,7 @@ fn default_baud() -> u32 { 115200 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DutFrame {
+pub struct OrchestratorFrame {
     pub length: usize,
     pub checksum_index: usize,
     #[serde(default)]
@@ -157,7 +157,7 @@ pub struct DutFrame {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DutCommand {
+pub struct OrchestratorCommand {
     pub name: String,
     #[serde(default)]
     pub title: String,
@@ -166,7 +166,7 @@ pub struct DutCommand {
     #[serde(default)]
     pub actions: Vec<serde_json::Value>,
     #[serde(default)]
-    pub judge: Option<DutJudge>,
+    pub judge: Option<OrchestratorJudge>,
     #[serde(default)]
     pub params: Option<serde_json::Value>,
     #[serde(default)]
@@ -177,7 +177,7 @@ pub struct DutCommand {
 
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
-pub struct DutJudge {
+pub struct OrchestratorJudge {
     #[serde(default)]
     pub result_idx: Option<usize>,
     #[serde(default)]
@@ -194,12 +194,12 @@ pub struct DutJudge {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DutRunResult {
+pub struct OrchestratorRunResult {
     pub command: String,
     pub title: String,
     pub verdict: String,
     pub sent: Vec<String>,
-    pub frames: Vec<DutFrameBytes>,
+    pub frames: Vec<OrchestratorFrameBytes>,
     pub extras: Vec<u8>,
     pub failed_checks: Vec<String>,
     pub elapsed_ms: u64,
@@ -207,7 +207,7 @@ pub struct DutRunResult {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct DutFrameBytes {
+pub struct OrchestratorFrameBytes {
     pub bytes: Vec<u8>,
     pub timestamp: String,
 }

@@ -10,9 +10,9 @@
  */
 import { SerialManager } from "./serial-manager.js";
 import { createSerialBackend } from "./hub/serial-backend.js";
-import { createDutBackend } from "./hub/dut-backend.js";
+import { createOrchestratorBackend } from "./hub/orchestrator-backend.js";
 import { createHubWithFallback } from "./hub/server.js";
-import { DutManager } from "./dut/manager.js";
+import { OrchestratorManager } from "./orchestrator/manager.js";
 
 function arg(name: string, fallback?: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -33,20 +33,20 @@ async function main() {
   const strict = hasFlag("strict-port");
   const manager = new SerialManager();
   const backend = createSerialBackend(manager);
-  const dut = createDutBackend(new DutManager(manager), manager);
+  const orchestrator = createOrchestratorBackend(new OrchestratorManager(manager), manager);
 
   let hub;
   if (strict) {
     const { createHub } = await import("./hub/server.js");
     hub = {
-      ...(await createHub({ backend, dut, host, port: preferredPort })),
+      ...(await createHub({ backend, orchestrator, host, port: preferredPort })),
       preferredPort,
       autoShifted: false,
     };
   } else {
     hub = await createHubWithFallback({
       backend,
-      dut,
+      orchestrator,
       host,
       preferredPort,
       portSpan,

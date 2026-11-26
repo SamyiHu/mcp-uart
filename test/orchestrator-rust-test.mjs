@@ -1,13 +1,13 @@
 /**
- * End-to-end checks for the Rust daemon's DUT HTTP surface.
- * Starts `uartd hub` on an ephemeral port and probes /api/dut* exactly as the
+ * End-to-end checks for the Rust daemon's Orchestrator HTTP surface.
+ * Starts `uartd hub` on an ephemeral port and probes /api/orchestrator* exactly as the
  * panel does. No serial hardware needed for these routes.
  */
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 
 const EXE = process.env.UARTD_BIN || 'E:/cargo-target/uartd/release/uartd.exe'
-const PROFILES = 'E:/Desktop_Projects/小程序/MCP_Uart/src/dut/profiles'
+const PROFILES = 'E:/Desktop_Projects/小程序/MCP_Uart/src/orchestrator/profiles'
 
 let failures = 0
 function check(name, fn) {
@@ -56,7 +56,7 @@ probe.close()
 await once(probe, 'close')
 
 const child = spawn(EXE, ['hub', '--host', '127.0.0.1', '--port', String(port), '--port-span', '0'], {
-  env: { ...process.env, UART_DUT_PROFILES: PROFILES },
+  env: { ...process.env, UART_Orchestrator_PROFILES: PROFILES },
   stdio: ['ignore', 'pipe', 'pipe'],
 })
 let stderr = ''
@@ -67,16 +67,16 @@ const base = `http://127.0.0.1:${port}`
 try {
   await waitForHealth(base)
 
-  await check('health reports dut:true and features.dut:true', async () => {
+  await check('health reports orchestrator:true and features.orchestrator:true', async () => {
     const { payload } = await req(base, 'GET', '/api/health')
-    assert(payload.dut === true, 'health.dut must be true')
-    assert(payload.features?.dut === true, 'features.dut must be true')
+    assert(payload.orchestrator === true, 'health.orchestrator must be true')
+    assert(payload.features?.orchestrator === true, 'features.orchestrator must be true')
     assert(payload.features?.history === true, 'features.history must stay true')
   })
 
-  await check('/api/dut lists the shipped profiles', async () => {
-    const { payload } = await req(base, 'GET', '/api/dut')
-    assert(payload.ok === true && payload.available === true, 'dut must be available')
+  await check('/api/orchestrator lists the shipped profiles', async () => {
+    const { payload } = await req(base, 'GET', '/api/orchestrator')
+    assert(payload.ok === true && payload.available === true, 'orchestrator must be available')
     const names = payload.profiles.map((p) => p.name)
     assert(names.includes('frame-demo'), `frame-demo missing: ${names}`)
     assert(names.includes('text-console'), `text-console missing: ${names}`)
@@ -85,35 +85,35 @@ try {
     assert(fd.smoke.includes('read_value'), 'frame-demo smoke must include read_value')
   })
 
-  await check('/api/dut/status describes a disconnected session', async () => {
-    const { status, payload } = await req(base, 'GET', '/api/dut/status')
+  await check('/api/orchestrator/status describes a disconnected session', async () => {
+    const { status, payload } = await req(base, 'GET', '/api/orchestrator/status')
     assert(status === 200, `status ${status}`)
     assert(payload.status.connected === false, 'must report disconnected')
     assert(payload.status.busy === false, 'must report not busy')
   })
 
-  await check('dut/connect requires profile', async () => {
-    const { status, payload } = await req(base, 'POST', '/api/dut/connect', {})
+  await check('orchestrator/connect requires profile', async () => {
+    const { status, payload } = await req(base, 'POST', '/api/orchestrator/connect', {})
     assert(status === 400, `expected 400, got ${status}`)
     assert(String(payload.error).includes('profile'), `error text: ${payload.error}`)
   })
 
-  await check('dut/connect with unknown profile is rejected', async () => {
-    const { status, payload } = await req(base, 'POST', '/api/dut/connect', { profile: 'does-not-exist', path: 'COMX' })
+  await check('orchestrator/connect with unknown profile is rejected', async () => {
+    const { status, payload } = await req(base, 'POST', '/api/orchestrator/connect', { profile: 'does-not-exist', path: 'COMX' })
     assert(status >= 400, `expected error status, got ${status}`)
-    assert(String(payload.error).includes('Unknown DUT profile'), `error text: ${payload.error}`)
+    assert(String(payload.error).includes('Unknown Orchestrator profile'), `error text: ${payload.error}`)
   })
 
-  await check('dut/run and dut/smoke require an attached session', async () => {
-    for (const path of ['/api/dut/run', '/api/dut/smoke']) {
+  await check('orchestrator/run and orchestrator/smoke require an attached session', async () => {
+    for (const path of ['/api/orchestrator/run', '/api/orchestrator/smoke']) {
       const { status, payload } = await req(base, 'POST', path, { name: 'read_value' })
       assert(status === 409, `${path} expected 409, got ${status}`)
-      assert(String(payload.error).includes('No DUT session'), `${path} error: ${payload.error}`)
+      assert(String(payload.error).includes('No Orchestrator session'), `${path} error: ${payload.error}`)
     }
   })
 
-  await check('unknown dut subpath returns 404', async () => {
-    const { status } = await req(base, 'GET', '/api/dut/nonexistent')
+  await check('unknown orchestrator subpath returns 404', async () => {
+    const { status } = await req(base, 'GET', '/api/orchestrator/nonexistent')
     assert(status === 404, `expected 404, got ${status}`)
   })
 } finally {
@@ -126,4 +126,4 @@ if (failures > 0) {
   if (stderr) console.error(`uartd stderr:\n${stderr.slice(-600)}`)
   process.exit(1)
 }
-console.log('\n=== DUT Rust HTTP tests done ===')
+console.log('\n=== Orchestrator Rust HTTP tests done ===')

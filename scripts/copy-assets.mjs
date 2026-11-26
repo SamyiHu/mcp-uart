@@ -17,8 +17,8 @@ const copies = [
   // Compiled output lives in the same folder (index.js), so only the data files
   // are cleared — wiping the directory would delete tsc's own output.
   {
-    from: join(root, 'src', 'dut', 'profiles'),
-    to: join(root, 'dist', 'dut', 'profiles'),
+    from: join(root, 'src', 'orchestrator', 'profiles'),
+    to: join(root, 'dist', 'orchestrator', 'profiles'),
     filter: (src) => !src.endsWith('.ts'),
     clean: (name) => name.endsWith('.json'),
   },

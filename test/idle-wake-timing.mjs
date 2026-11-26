@@ -1,4 +1,4 @@
-// IDLE 唤醒定时判别：发 0x01 进 IDLE 后高频轮询，测 DUT 首次应答延迟。
+// IDLE 唤醒定时判别：发 0x01 进 IDLE 后高频轮询，测 Orchestrator 首次应答延迟。
 // 判据：~15.6ms 边界 → BTM 真唤醒；<3ms → IDLE 根本没睡；>500ms → BTM 周期档配错。
 import { SerialPort } from "serialport";
 

@@ -108,7 +108,7 @@ dsh-plugin/                      一个 bundle
 | 工具 | 覆盖 | 对应现有 MCP 工具 |
 |---|---|---|
 | `uart_serial` | 列端口、开/关、读写、等待、信号、编码/协议设置 | 15 个 `serial_*` |
-| `uart_dut` | profile 列表、连接、单命令、smoke、序列、提取 | 10 个 `dut_*` |
+| `uart_orchestrator` | profile 列表、连接、单命令、smoke、序列、提取 | 10 个 `orchestrator_*` |
 | `uart_view` | 可视化（帧表/冒烟报告 HTML）、面板状态 | 3 个 `serial_visualize*` + `uart_panel_status` |
 
 每个工具一个 `action` 枚举 + 共用参数（path / data / name / timeoutMs …），
@@ -154,7 +154,7 @@ Host 插件 import 的纯函数，工具注册层只做 schema ↔ 参数适配�
 4. **patch 调整**：`dsh-plugin/cordis.patch.yml` 删除 `mcp-uart` 行。
 5. **设置页开关**：`client.template.js` 加 `ToggleRow` + 读写 `/uart/agent`。
 6. **验证**：
-   - DSH profile：工具列表**无** `mcp__uart__*`，只有 `uart_serial/dut/view`；
+   - DSH profile：工具列表**无** `mcp__uart__*`，只有 `uart_serial/orchestrator/view`；
      面板有数据；开关关掉后工具消失、页面仍可用。
    - 外部：`node dist/index.js` 作为 MCP 启动，28 个工具齐全，`npm test` 全绿。
 7. **重启 DSH**（插件 Host 代码变更必须完全退出再启动）。
@@ -198,7 +198,7 @@ Host 插件 import 的纯函数，工具注册层只做 schema ↔ 参数适配�
 
 回归：`test/hub-takeover-test.mjs`（复用不重开、换端口仍替换、瞬时错误会重试）。
 
-已知限制：`/api/dut/connect` 复用活动连接时不会按 profile 的波特率重新配置；若面板
+已知限制：`/api/orchestrator/connect` 复用活动连接时不会按 profile 的波特率重新配置；若面板
 用的波特率与 profile 不同，需要先在面板或工具里显式设置。
 
 ## 9.1 MCP 侧也已分组（2026-11-25 完成）
@@ -215,9 +215,9 @@ Host 插件 import 的纯函数，工具注册层只做 schema ↔ 参数适配�
   （`path` 对 `open` 必需、对 `list_ports` 无意义），选中 action 后再用该工具
   自己的 schema 重新校验，默认值规则因此完全保留。
 
-实测：`tools/list` 返回 3 个工具（`uart_serial` 15 actions、`uart_dut` 10、
+实测：`tools/list` 返回 3 个工具（`uart_serial` 15 actions、`uart_orchestrator` 10、
 `uart_view` 2）；`uart_serial{action:"list_ports"}` 与
-`uart_dut{action:"list_profiles"}` 均正常返回。
+`uart_orchestrator{action:"list_profiles"}` 均正常返回。
 
 ## 10. 当前状态
 

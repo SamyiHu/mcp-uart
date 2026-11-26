@@ -10,7 +10,7 @@
 | 面板 | 侧边栏「串口」页：连接、实时帧、过滤、发送、调制解调器信号 |
 | 悬浮球 | 右下角圆球，悬停展开为胶囊，点击打开完整控制台 |
 | 底栏状态条 | 输入框下方一行状态，点「展开」以悬浮窗打开控制台 |
-| Agent 工具 | `uart_serial` / `uart_dut` / `uart_view`，见下节 |
+| Agent 工具 | `uart_serial` / `uart_orchestrator` / `uart_view`，见下节 |
 
 插件在后台启动一个本地 Hub（`dist/hub.js` 子进程，端口从 8787 起，占用则顺延），
 面板与工具都通过它访问同一个串口会话。
@@ -20,7 +20,7 @@
 | 工具 | 覆盖 |
 |---|---|
 | `uart_serial` | 列端口、连接/断开、收发、等待、DTR/RTS/Break、在线改编码与分帧 |
-| `uart_dut` | 编排配置列表、连接、单命令、冒烟序列、状态 |
+| `uart_orchestrator` | 编排配置列表、连接、单命令、冒烟序列、状态 |
 | `uart_view` | 面板/Hub 状态、实时帧、历史帧（按文本或 HEX 搜索）、端口明细 |
 
 开关在 设置 → 串口控制台 → 「Agent 工具」，默认开启。关掉后工具立即从模型侧
@@ -41,7 +41,7 @@
 ## 外部（非 DSH）用法
 
 同一套后端也是标准 MCP 服务器，给 Cursor、Claude Code 等客户端用，工具面与
-DSH 内一致（`uart_serial` / `uart_dut` / `uart_view`）：
+DSH 内一致（`uart_serial` / `uart_orchestrator` / `uart_view`）：
 
 ```bash
 node dist/index.js               # MCP 服务器，Hub 随进程启动，stderr 打印地址

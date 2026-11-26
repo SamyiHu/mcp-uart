@@ -137,7 +137,7 @@ export function extractFromObject(obj: Record<string, unknown>, pathExpr: string
   const path = pathExpr.trim();
   if (!path) throw new Error("Empty extract path");
 
-  // Fast paths for DUT result fields
+  // Fast paths for Orchestrator result fields
   if (path === "verdict" || path === "command" || path === "elapsedMs" || path === "title" || path === "note") {
     return obj[path];
   }

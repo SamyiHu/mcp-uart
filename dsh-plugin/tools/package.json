@@ -2,7 +2,7 @@
   "name": "@local/dsh-uart-tools",
   "version": "1.0.0",
   "private": true,
-  "description": "Serial agent tools for the UART panel: three grouped tools (uart_serial / uart_dut / uart_view) over the panel's Hub, with an MCP fallback hand-over. Shipped inside the @local/dsh-uart bundle, not installed on its own.",
+  "description": "Serial agent tools for the UART panel: three grouped tools (uart_serial / uart_orchestrator / uart_view) over the panel's Hub, with an MCP fallback hand-over. Shipped inside the @local/dsh-uart bundle, not installed on its own.",
   "type": "module",
   "exports": {
     ".": "./index.js",

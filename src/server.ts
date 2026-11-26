@@ -7,10 +7,10 @@ import { SerialManager } from "./serial-manager.js";
 import { listEncodings } from "./encodings.js";
 import { listProtocols } from "./protocols.js";
 import type { SerialConfig, BaudRate, Encoding, ProtocolMode, MessageFilter, SerialMessage } from "./types.js";
-import { DutManager, formatRun, hex } from "./dut/manager.js";
-import { listProfiles } from "./dut/profiles/index.js";
-import type { DutAction } from "./dut/types.js";
-import { validateMatchHex } from "./dut/sequence.js";
+import { OrchestratorManager, formatRun, hex } from "./orchestrator/manager.js";
+import { listProfiles } from "./orchestrator/profiles/index.js";
+import type { OrchestratorAction } from "./orchestrator/types.js";
+import { validateMatchHex } from "./orchestrator/sequence.js";
 import { extractFromMessages, extractFromObject } from "./extract.js";
 import { renderTimelineHtml, renderSmokeHtml, writeHtmlReport } from "./visualize.js";
 import { ok, fail } from "./respond.js";
@@ -51,8 +51,8 @@ const messagesBrief = (ms: SerialMessage[]) =>
 export type ServerHooks = {
   /** Shared manager (so an in-process Hub can monitor the same SerialManager). */
   manager?: SerialManager;
-  /** Shared DUT manager (so the Hub can run profiles over the same session). */
-  dut?: DutManager;
+  /** Shared Orchestrator manager (so the Hub can run profiles over the same session). */
+  orchestrator?: OrchestratorManager;
   /** Called after a port is successfully opened by MCP tools. */
   onConnectionOpen?: (connectionId: string) => void;
   /** Called when MCP closes a connection. */
@@ -93,11 +93,11 @@ const TOOL_GROUPS = {
       "set_signals",
     ],
   },
-  uart_dut: {
-    prefix: "dut_",
-    title: "DUT test profiles",
+  uart_orchestrator: {
+    prefix: "orchestrator_",
+    title: "Orchestrator test profiles",
     description:
-      "Profile-driven DUT testing over the serial port: list profiles, connect, run a command or the whole "
+      "Profile-driven Orchestrator testing over the serial port: list profiles, connect, run a command or the whole "
       + "smoke sequence, send raw bytes, and read the session status. Select the operation with `action`.",
     actions: [
       "list_profiles",
@@ -174,7 +174,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
 
   // Tools are declared one per operation and captured here instead of being
   // registered directly: the model-facing surface is three grouped tools
-  // (`uart_serial` / `uart_dut` / `uart_view`) that dispatch by `action`.
+  // (`uart_serial` / `uart_orchestrator` / `uart_view`) that dispatch by `action`.
   // Keeping the per-operation declarations intact means the grouping layer is
   // a pure adapter — the implementations never change.
   const rawTools = new Map<string, { definition: any; handler: any }>();
@@ -188,7 +188,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
 
   const manager = hooks.manager ?? new SerialManager();
   const monitorProcesses = new Map<string, ReturnType<typeof spawn>>();
-  const dut = hooks.dut ?? new DutManager(manager);
+  const orchestrator = hooks.orchestrator ?? new OrchestratorManager(manager);
 
   // ──────────────────────────────────────────────
   // Resources
@@ -1010,9 +1010,9 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
   api.registerTool(
     "serial_visualize_smoke",
     {
-      title: "Visualize DUT smoke report",
+      title: "Visualize Orchestrator smoke report",
       description:
-        "Write an HTML PASS/FAIL report. Pass the structured result fields from dut_smoke (or a prior smoke summary).",
+        "Write an HTML PASS/FAIL report. Pass the structured result fields from orchestrator_smoke (or a prior smoke summary).",
       inputSchema: {
         profile: z.string(),
         steps: z.array(
@@ -1074,13 +1074,13 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
   );
 
   // ──────────────────────────────────────────────
-  // DUT profile-driven test tools
+  // Orchestrator profile-driven test tools
   // ──────────────────────────────────────────────
 
   api.registerTool(
-    "dut_list_profiles",
+    "orchestrator_list_profiles",
     {
-      title: "List DUT profiles",
+      title: "List Orchestrator profiles",
       description: "List FT test profiles + command tables (entry point).",
       outputSchema: {
         count: z.number(),
@@ -1132,9 +1132,9 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
   );
 
   api.registerTool(
-    "dut_connect",
+    "orchestrator_connect",
     {
-      title: "Connect DUT",
+      title: "Connect Orchestrator",
       description:
         "Open port + attach profile session (framing/checksum/handshake). Returns connectionId. autoMonitor default false.",
       inputSchema: {
@@ -1156,7 +1156,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     },
     async (params) => {
       try {
-        const { getProfile } = await import("./dut/profiles/index.js");
+        const { getProfile } = await import("./orchestrator/profiles/index.js");
         const profile = getProfile(params.profile);
         const config: SerialConfig = {
           path: params.path,
@@ -1185,7 +1185,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
           }
         }
 
-        dut.attach(open.connectionId, params.profile);
+        orchestrator.attach(open.connectionId, params.profile);
         const data = {
           ok: true,
           connectionId: open.connectionId,
@@ -1198,7 +1198,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
         };
         return ok(
           data as any,
-          `DUT connected: ${params.path} @ ${config.baudRate} 8N1, profile=${params.profile}\nConnection ID: ${open.connectionId}\n接线: ${profile.serial.wiring ?? "见profile"}${monitorLog ? `\nMonitor: ${monitorLog}` : ""}\n下一步: dut_test / dut_cmd / dut_smoke`
+          `Orchestrator connected: ${params.path} @ ${config.baudRate} 8N1, profile=${params.profile}\nConnection ID: ${open.connectionId}\n接线: ${profile.serial.wiring ?? "见profile"}${monitorLog ? `\nMonitor: ${monitorLog}` : ""}\n下一步: orchestrator_test / orchestrator_cmd / orchestrator_smoke`
         );
       } catch (err: any) {
         return fail(`Error: ${err.message}`);
@@ -1207,10 +1207,10 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
   );
 
   api.registerTool(
-    "dut_disconnect",
+    "orchestrator_disconnect",
     {
-      title: "Disconnect DUT",
-      description: "Detach DUT session and close port.",
+      title: "Disconnect Orchestrator",
+      description: "Detach Orchestrator session and close port.",
       inputSchema: { connectionId: z.string() },
       outputSchema: {
         ok: z.boolean(),
@@ -1219,7 +1219,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     },
     async (params) => {
       try {
-        if (dut.hasSession(params.connectionId)) dut.detach(params.connectionId);
+        if (orchestrator.hasSession(params.connectionId)) orchestrator.detach(params.connectionId);
         await manager.close(params.connectionId);
         hooks.onConnectionClose?.(params.connectionId);
         return ok(
@@ -1233,9 +1233,9 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
   );
 
   api.registerTool(
-    "dut_test",
+    "orchestrator_test",
     {
-      title: "Run DUT test",
+      title: "Run Orchestrator test",
       description:
         "Run one named test with auto PASS/FAIL. structuredContent.verdict is machine-readable; format=human adds prose.",
       inputSchema: {
@@ -1266,7 +1266,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     },
     async (params) => {
       try {
-        const r = await dut.runCommand(params.connectionId, params.name, {
+        const r = await orchestrator.runCommand(params.connectionId, params.name, {
           cmd: params.cmd,
           p1: params.p1,
           p2: params.p2,
@@ -1284,7 +1284,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }
   );
 
-  // ── dut_sequence: free-form orchestrator (design v2) ──
+  // ── orchestrator_sequence: free-form orchestrator (design v2) ──
   const seqByte = z.union([z.number(), z.string()]).describe("0~255 number or hex string like '0x0F'");
   const seqAction = z.discriminatedUnion("action", [
     z.object({
@@ -1350,13 +1350,13 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     }),
   ]);
 
-  function coerceStep(s: any): DutAction {
+  function coerceStep(s: any): OrchestratorAction {
     const a = { ...s };
     const type = a.action === "delay" ? "wait" : a.action;
     delete a.action;
     // map delay→wait
     if (type === "wait" && a.ms !== undefined) {
-      return { type: "wait", ms: a.ms, ...(a.mark ? { mark: a.mark } : {}), ...(a.baseline ? { baseline: a.baseline } : {}) } as DutAction;
+      return { type: "wait", ms: a.ms, ...(a.mark ? { mark: a.mark } : {}), ...(a.baseline ? { baseline: a.baseline } : {}) } as OrchestratorAction;
     }
     if (type === "repeat" && Array.isArray(a.steps)) {
       return {
@@ -1366,12 +1366,12 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
         abortOnFail: a.abortOnFail,
         logRepeat: a.logRepeat,
         mark: a.mark,
-      } as DutAction;
+      } as OrchestratorAction;
     }
-    return { type, ...a } as DutAction;
+    return { type, ...a } as OrchestratorAction;
   }
 
-  function precheckPoll(actions: DutAction[]): void {
+  function precheckPoll(actions: OrchestratorAction[]): void {
     for (const act of actions) {
       if (act.type === "poll") {
         if (act.matchHex && act.send.frame && (act.matchMode ?? "frame-hex") === "frame-hex") {
@@ -1396,9 +1396,9 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
   }
 
   api.registerTool(
-    "dut_sequence",
+    "orchestrator_sequence",
     {
-      title: "Run DUT sequence",
+      title: "Run Orchestrator sequence",
       description:
         "Run a free-form action sequence (poll/signals/repeat/clear-state + classic frame ops). Returns per-step timestamped log. Budget default 25s. poll.matchHex matches NEW frame hex (not echo); use clear-state after command echo before timing probes.",
       inputSchema: {
@@ -1421,7 +1421,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
       try {
         const actions = (params.steps as any[]).map(coerceStep);
         precheckPoll(actions);
-        const r = await dut.runSequence(params.connectionId, actions, {
+        const r = await orchestrator.runSequence(params.connectionId, actions, {
           totalBudgetMs: params.totalBudgetMs,
           abortOnError: params.abortOnError,
           captureFrames: params.captureFrames,
@@ -1438,9 +1438,9 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
   );
 
   api.registerTool(
-    "dut_extract",
+    "orchestrator_extract",
     {
-      title: "Extract DUT field",
+      title: "Extract Orchestrator field",
       description:
         "Run a named test (or raw-like command) then extract one field via path: verdict | command | elapsedMs | frames.length | frames[1].bytes[2] | sent.0 | failedChecks.0",
       inputSchema: {
@@ -1461,7 +1461,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     },
     async (params) => {
       try {
-        const r = await dut.runCommand(params.connectionId, params.name, {
+        const r = await orchestrator.runCommand(params.connectionId, params.name, {
           cmd: params.cmd,
           p1: params.p1,
           p2: params.p2,
@@ -1482,9 +1482,9 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
   );
 
   api.registerTool(
-    "dut_cmd",
+    "orchestrator_cmd",
     {
-      title: "Raw DUT command",
+      title: "Raw Orchestrator command",
       description:
         "Send framed command (echo handshake + result). structuredContent.frames is byte arrays.",
       inputSchema: {
@@ -1506,7 +1506,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     },
     async (params) => {
       try {
-        const session = dut.getSession(params.connectionId);
+        const session = orchestrator.getSession(params.connectionId);
         const started = Date.now();
         const sent: string[] = [];
         session.reset();
@@ -1545,9 +1545,9 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
   );
 
   api.registerTool(
-    "dut_smoke",
+    "orchestrator_smoke",
     {
-      title: "DUT smoke test",
+      title: "Orchestrator smoke test",
       description:
         "Run profile smoke sequence. structuredContent has steps[] with full frame data (for serial_visualize_smoke).",
       inputSchema: {
@@ -1583,11 +1583,11 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     },
     async (params) => {
       try {
-        const result = await dut.runSmoke(params.connectionId, params.includeLowPower);
+        const result = await orchestrator.runSmoke(params.connectionId, params.includeLowPower);
         const data = { ...result, ok: result.allPassed };
         let human: string;
         if (params.format === "human") {
-          const lines: string[] = [`=== DUT smoke (${result.profile}) ===`];
+          const lines: string[] = [`=== Orchestrator smoke (${result.profile}) ===`];
           for (const s of result.steps) {
             const mark =
               s.verdict === "PASS" ? "✓" : s.verdict === "FAIL" ? "✗" : s.verdict === "TIMEOUT" ? "⏱" : "○";
@@ -1614,9 +1614,9 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
   );
 
   api.registerTool(
-    "dut_status",
+    "orchestrator_status",
     {
-      title: "DUT status",
+      title: "Orchestrator status",
       description: "Session stats: frames parsed/sent, noise, last frames.",
       inputSchema: { connectionId: z.string() },
       outputSchema: {
@@ -1639,7 +1639,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     },
     async (params) => {
       try {
-        const session = dut.getSession(params.connectionId);
+        const session = orchestrator.getSession(params.connectionId);
         const info = manager.getInfo(params.connectionId);
         const snap = session.snapshot();
         const data = {
@@ -1668,9 +1668,9 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
   );
 
   api.registerTool(
-    "dut_send_raw",
+    "orchestrator_send_raw",
     {
-      title: "DUT send raw",
+      title: "Orchestrator send raw",
       description: "Send raw hex bytes without framing.",
       inputSchema: {
         connectionId: z.string(),
@@ -1683,7 +1683,7 @@ export function createServer(hooks: ServerHooks = {}): McpServer {
     },
     async (params) => {
       try {
-        const session = dut.getSession(params.connectionId);
+        const session = orchestrator.getSession(params.connectionId);
         const sent = await session.sendRaw(params.hexData);
         return ok({ ok: true, sent } as any, `Sent raw: ${sent}`);
       } catch (err: any) {

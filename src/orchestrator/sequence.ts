@@ -1,14 +1,14 @@
 /**
- * dut_sequence engine — free-form DutAction[] on top of DutSession.
+ * orchestrator_sequence engine — free-form OrchestratorAction[] on top of OrchestratorSession.
  */
 import type {
-  DutAction,
-  DutSequenceOptions,
-  DutSequenceResult,
-  DutSequenceStepLog,
+  OrchestratorAction,
+  OrchestratorSequenceOptions,
+  OrchestratorSequenceResult,
+  OrchestratorStepLog,
   ParsedFrame,
 } from "./types.js";
-import { DutSession, num, sleep } from "./session.js";
+import { OrchestratorSession, num, sleep } from "./session.js";
 
 const DEFAULT_BUDGET_MS = 25_000;
 
@@ -39,23 +39,23 @@ function isHardAbort(err: unknown): boolean {
   return /not open|not found|closed|ECONN|Access|Access/i.test(m);
 }
 
-export async function runDutSequence(
-  session: DutSession,
-  actions: DutAction[],
-  options: DutSequenceOptions = {}
-): Promise<DutSequenceResult> {
+export async function runOrchestratorSequence(
+  session: OrchestratorSession,
+  actions: OrchestratorAction[],
+  options: OrchestratorSequenceOptions = {}
+): Promise<OrchestratorSequenceResult> {
   const budget = options.totalBudgetMs ?? DEFAULT_BUDGET_MS;
   const abortOnError = options.abortOnError === true;
   const capture = options.captureFrames ?? "match";
   const t0 = Date.now();
 
-  const steps: DutSequenceStepLog[] = [];
+  const steps: OrchestratorStepLog[] = [];
   let lastFrame: { cmd: number; p1: number; p2: number } | null = null;
   let firstRxLatencyMs: number | undefined;
   let firstRxSeen = false;
   let baselineAtMs: number | undefined;
   let recoveryMs: number | undefined;
-  let stopped: DutSequenceResult["stopped"] = null;
+  let stopped: OrchestratorSequenceResult["stopped"] = null;
   let abortReason: string | undefined;
 
   const stats0 = { ...session.stats };
@@ -106,8 +106,8 @@ export async function runDutSequence(
   }
 
   async function runPoll(
-    act: Extract<DutAction, { type: "poll" }>,
-    log: DutSequenceStepLog
+    act: Extract<OrchestratorAction, { type: "poll" }>,
+    log: OrchestratorStepLog
   ): Promise<void> {
     if (!act.send.frame && !act.send.hex) {
       throw new Error("poll.send requires frame or hex");
@@ -244,7 +244,7 @@ export async function runDutSequence(
     log.frames = slimFrames(session.snapshot().frames.slice(frameBase));
   }
 
-  async function runOne(act: DutAction, log: DutSequenceStepLog): Promise<void> {
+  async function runOne(act: OrchestratorAction, log: OrchestratorStepLog): Promise<void> {
     switch (act.type) {
       case "send-frame": {
         const cmd = num(act.cmd);
@@ -330,7 +330,7 @@ export async function runDutSequence(
               if (outOfBudget()) log.stopped = "budget";
               break;
             }
-            const childLog: DutSequenceStepLog = {
+            const childLog: OrchestratorStepLog = {
               i: steps.length,
               action: child.type,
               atMs: elapsed(),
@@ -402,7 +402,7 @@ export async function runDutSequence(
       if (stopped === "aborted") break;
 
       const act = actions[idx];
-      const log: DutSequenceStepLog = { i: idx, action: act.type, atMs: elapsed() };
+      const log: OrchestratorStepLog = { i: idx, action: act.type, atMs: elapsed() };
       if ((act as any).mark) log.mark = (act as any).mark;
       if ((act as any).baseline) {
         log.baseline = true;

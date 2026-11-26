@@ -1,13 +1,13 @@
 /**
  * Message payload shape tests.
  *
- * Regression: a connection opened with `encoding: "hex"` (the DUT profile path
+ * Regression: a connection opened with `encoding: "hex"` (the Orchestrator profile path
  * did exactly that) returns `data` as a HEX STRING identical to `raw`. The
  * console then printed hex twice and the real text never appeared. This pins
  * both halves: the backend must hand back decoded text, and the console must
  * still cope when it is handed hex.
  */
-import { dutSerialConfig } from "../dist/hub/dut-backend.js";
+import { orchestratorSerialConfig } from "../dist/hub/orchestrator-backend.js";
 import { decode } from "../dist/encodings.js";
 
 const assert = (cond, msg) => {
@@ -38,9 +38,9 @@ async function main() {
   assert(decode(bytes, "hex") === raw, "encoding=hex makes data identical to raw (the bug)");
   assert(decode(bytes, "utf8") === expected, `encoding=utf8 makes data readable text (got ${decode(bytes, "utf8")})`);
 
-  // ── 2. the DUT profile connection must no longer use hex ──
-  const cfg = dutSerialConfig("COM6", Object.keys(profileNames())[0] ?? "frame-demo");
-  assert(cfg.encoding !== "hex", `dut_connect uses a text encoding, not hex (got ${cfg.encoding})`);
+  // ── 2. the Orchestrator profile connection must no longer use hex ──
+  const cfg = orchestratorSerialConfig("COM6", Object.keys(profileNames())[0] ?? "frame-demo");
+  assert(cfg.encoding !== "hex", `orchestrator_connect uses a text encoding, not hex (got ${cfg.encoding})`);
 
   // ── 3. the console repairs a legacy hex-shaped frame ──
   assert(textOf({ data: raw, raw }) === expected, `console decodes a hex-shaped frame to text (got ${textOf({ data: raw, raw })})`);

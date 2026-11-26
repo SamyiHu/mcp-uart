@@ -62,7 +62,7 @@ export function createUartUi({ root, apiBase = './', locale = 'zh', externalUrl 
     timer: null,
     tab: 'monitor',
     history: { frames: [], total: 0, text: '', hex: '', loaded: false, timer: 0 },
-    dut: {
+    orchestrator: {
       available: false,
       profiles: [],
       profile: '',
@@ -153,7 +153,7 @@ export function createUartUi({ root, apiBase = './', locale = 'zh', externalUrl 
    * Bytes → displayable text for the ASCII column.
    *
    * `frame.data` is already decoded by the backend using the connection's
-   * encoding — but a connection opened with `encoding: "hex"` (the DUT profile
+   * encoding — but a connection opened with `encoding: "hex"` (the Orchestrator profile
    * path does exactly that) hands back a HEX STRING, not text. Rendering that
    * verbatim printed hex twice and hid the actual message.
    *
@@ -216,9 +216,9 @@ export function createUartUi({ root, apiBase = './', locale = 'zh', externalUrl 
 
   // tabs -------------------------------------------------------------------
   refs.tabMonitor = el('button', { class: 'uart-tab is-active', type: 'button', text: t('tabMonitor'), onclick: () => setTab('monitor') })
-  refs.tabDut = el('button', { class: 'uart-tab', type: 'button', text: t('tabDut'), onclick: () => setTab('dut') })
+  refs.tabOrchestrator = el('button', { class: 'uart-tab', type: 'button', text: t('tabOrchestrator'), onclick: () => setTab('orchestrator') })
   refs.tabHistory = el('button', { class: 'uart-tab', type: 'button', text: t('tabHistory'), onclick: () => setTab('history') })
-  refs.tabs = el('div', { class: 'uart-tabs' }, refs.tabMonitor, refs.tabDut, refs.tabHistory)
+  refs.tabs = el('div', { class: 'uart-tabs' }, refs.tabMonitor, refs.tabOrchestrator, refs.tabHistory)
 
   const header = el(
     'div',
@@ -513,97 +513,97 @@ export function createUartUi({ root, apiBase = './', locale = 'zh', externalUrl 
     ),
   )
 
-  // dut ---------------------------------------------------------------------
-  refs.dutProfile = el('select', { class: 'uart-select', id: 'uart-dut-profile', onchange: (event) => { state.dut.profile = event.target.value; selectDutProfile() } })
-  refs.dutPort = el('input', { class: 'uart-input', list: 'uart-port-list', placeholder: t('portPlaceholder'), oninput: (event) => { state.dutPort = event.target.value; syncDut() } })
-  refs.dutBaud = el('input', { class: 'uart-input', type: 'number', min: '110', step: '1', placeholder: t('dutBaudAuto'), oninput: (event) => { state.dutBaud = event.target.value } })
-  refs.dutDesc = el('p', { class: 'uart-dut-desc' })
-  refs.dutMeta = el('p', { class: 'uart-dut-meta' })
-  refs.dutTarget = el('p', { class: 'uart-dut-target' })
-  refs.dutConnect = el('button', { class: 'uart-button is-primary is-block', type: 'button', text: t('dutConnect'), onclick: connectDut })
-  refs.dutDisconnect = el('button', { class: 'uart-button is-danger is-block', type: 'button', text: t('dutDisconnect'), style: { display: 'none' }, onclick: disconnectDut })
-  refs.dutStatus = el('div', { class: 'uart-dut-kv' })
-  refs.dutSummary = el('span', { class: 'uart-count' })
-  refs.dutProgress = el('div', { class: 'uart-dut-progress', style: { display: 'none' } })
-  refs.dutCopyReport = el('button', {
+  // orchestrator ---------------------------------------------------------------------
+  refs.orchestratorProfile = el('select', { class: 'uart-select', id: 'uart-orchestrator-profile', onchange: (event) => { state.orchestrator.profile = event.target.value; selectOrchestratorProfile() } })
+  refs.orchestratorPort = el('input', { class: 'uart-input', list: 'uart-port-list', placeholder: t('portPlaceholder'), oninput: (event) => { state.orchestratorPort = event.target.value; syncOrchestrator() } })
+  refs.orchestratorBaud = el('input', { class: 'uart-input', type: 'number', min: '110', step: '1', placeholder: t('orchestratorBaudAuto'), oninput: (event) => { state.orchestratorBaud = event.target.value } })
+  refs.orchestratorDesc = el('p', { class: 'uart-orchestrator-desc' })
+  refs.orchestratorMeta = el('p', { class: 'uart-orchestrator-meta' })
+  refs.orchestratorTarget = el('p', { class: 'uart-orchestrator-target' })
+  refs.orchestratorConnect = el('button', { class: 'uart-button is-primary is-block', type: 'button', text: t('orchestratorConnect'), onclick: connectOrchestrator })
+  refs.orchestratorDisconnect = el('button', { class: 'uart-button is-danger is-block', type: 'button', text: t('orchestratorDisconnect'), style: { display: 'none' }, onclick: disconnectOrchestrator })
+  refs.orchestratorStatus = el('div', { class: 'uart-orchestrator-kv' })
+  refs.orchestratorSummary = el('span', { class: 'uart-count' })
+  refs.orchestratorProgress = el('div', { class: 'uart-orchestrator-progress', style: { display: 'none' } })
+  refs.orchestratorCopyReport = el('button', {
     class: 'uart-button is-quiet',
     type: 'button',
-    text: t('dutCopyReport'),
-    title: t('dutCopyReportHint'),
+    text: t('orchestratorCopyReport'),
+    title: t('orchestratorCopyReportHint'),
     onclick: () => {
-      if (state.dut.steps.length === 0) return
-      copyText(dutReport())
+      if (state.orchestrator.steps.length === 0) return
+      copyText(orchestratorReport())
     },
   })
-  refs.dutCmdSearch = el('input', {
+  refs.orchestratorCmdSearch = el('input', {
     class: 'uart-input uart-cmd-search',
-    placeholder: t('dutSearchCommands'),
-    oninput: (event) => { state.dut.query = event.target.value; renderDutCommands() },
+    placeholder: t('orchestratorSearchCommands'),
+    oninput: (event) => { state.orchestrator.query = event.target.value; renderOrchestratorCommands() },
   })
-  refs.dutLow = el('input', { type: 'checkbox', onchange: (event) => { state.dut.includeLowPower = event.target.checked } })
+  refs.orchestratorLow = el('input', { type: 'checkbox', onchange: (event) => { state.orchestrator.includeLowPower = event.target.checked } })
   // Hidden unless the selected profile declares low-power steps: a profile is
   // free to have none, and a checkbox that does nothing is worse than no checkbox.
-  refs.dutLowLabel = el('label', { class: 'uart-toggle', style: { display: 'none' } }, refs.dutLow, t('dutLowPower'))
-  refs.dutSmoke = el('button', { class: 'uart-button is-primary', type: 'button', text: t('dutRunSmoke'), onclick: runSmoke })
-  refs.dutSteps = el('div', { class: 'uart-dut-steps' })
-  refs.dutCmds = el('div', { class: 'uart-cmd-list' })
-  refs.dutCmdsCount = el('span', { class: 'uart-count' })
-  refs.dutBadges = new Map()
+  refs.orchestratorLowLabel = el('label', { class: 'uart-toggle', style: { display: 'none' } }, refs.orchestratorLow, t('orchestratorLowPower'))
+  refs.orchestratorSmoke = el('button', { class: 'uart-button is-primary', type: 'button', text: t('orchestratorRunSmoke'), onclick: runSmoke })
+  refs.orchestratorSteps = el('div', { class: 'uart-orchestrator-steps' })
+  refs.orchestratorCmds = el('div', { class: 'uart-cmd-list' })
+  refs.orchestratorCmdsCount = el('span', { class: 'uart-count' })
+  refs.orchestratorBadges = new Map()
 
-  const dutRail = el(
+  const orchestratorRail = el(
     'div',
     { class: 'uart-card uart-rail' },
     el(
       'div',
-      { class: 'uart-group uart-dut-form' },
-      el('p', { class: 'uart-group-title', text: t('dutSectionProfile') }),
-      el('div', { class: 'uart-field' }, el('label', { class: 'uart-label', for: 'uart-dut-profile', text: t('dutProfile') }), refs.dutProfile),
-      refs.dutDesc,
-      refs.dutMeta,
-      refs.dutTarget,
-      el('div', { class: 'uart-field' }, el('label', { class: 'uart-label', text: t('dutPort') }), refs.dutPort),
-      el('div', { class: 'uart-field' }, el('label', { class: 'uart-label', text: t('dutBaud') }), refs.dutBaud),
-      refs.dutConnect,
-      refs.dutDisconnect,
+      { class: 'uart-group uart-orchestrator-form' },
+      el('p', { class: 'uart-group-title', text: t('orchestratorSectionProfile') }),
+      el('div', { class: 'uart-field' }, el('label', { class: 'uart-label', for: 'uart-orchestrator-profile', text: t('orchestratorProfile') }), refs.orchestratorProfile),
+      refs.orchestratorDesc,
+      refs.orchestratorMeta,
+      refs.orchestratorTarget,
+      el('div', { class: 'uart-field' }, el('label', { class: 'uart-label', text: t('orchestratorPort') }), refs.orchestratorPort),
+      el('div', { class: 'uart-field' }, el('label', { class: 'uart-label', text: t('orchestratorBaud') }), refs.orchestratorBaud),
+      refs.orchestratorConnect,
+      refs.orchestratorDisconnect,
     ),
-    el('div', { class: 'uart-group' }, el('p', { class: 'uart-group-title', text: t('dutSectionStatus') }), refs.dutStatus),
+    el('div', { class: 'uart-group' }, el('p', { class: 'uart-group-title', text: t('orchestratorSectionStatus') }), refs.orchestratorStatus),
   )
 
-  const dutSmokeCard = el(
+  const orchestratorSmokeCard = el(
     'div',
-    { class: 'uart-card uart-dut-smoke' },
+    { class: 'uart-card uart-orchestrator-smoke' },
     el(
       'div',
-      { class: 'uart-dut-head' },
-      el('div', { class: 'uart-dut-title', text: t('dutSmoke') }),
-      refs.dutSummary,
+      { class: 'uart-orchestrator-head' },
+      el('div', { class: 'uart-orchestrator-title', text: t('orchestratorSmoke') }),
+      refs.orchestratorSummary,
       el('span', { class: 'uart-spacer' }),
-      refs.dutLowLabel,
-      refs.dutCopyReport,
-      refs.dutSmoke,
+      refs.orchestratorLowLabel,
+      refs.orchestratorCopyReport,
+      refs.orchestratorSmoke,
     ),
-    refs.dutProgress,
-    refs.dutSteps,
+    refs.orchestratorProgress,
+    refs.orchestratorSteps,
   )
 
-  const dutCommandsCard = el(
+  const orchestratorCommandsCard = el(
     'div',
-    { class: 'uart-card uart-dut-commands' },
+    { class: 'uart-card uart-orchestrator-commands' },
     el(
       'div',
-      { class: 'uart-dut-head' },
-      el('div', { class: 'uart-dut-title', text: t('dutCommands') }),
-      refs.dutCmdSearch,
-      refs.dutCmdsCount,
+      { class: 'uart-orchestrator-head' },
+      el('div', { class: 'uart-orchestrator-title', text: t('orchestratorCommands') }),
+      refs.orchestratorCmdSearch,
+      refs.orchestratorCmdsCount,
     ),
-    refs.dutCmds,
+    refs.orchestratorCmds,
   )
 
-  const dutBody = el(
+  const orchestratorBody = el(
     'div',
-    { class: 'uart-body uart-dut-body', style: { display: 'none' } },
-    dutRail,
-    el('div', { class: 'uart-main' }, dutSmokeCard, dutCommandsCard),
+    { class: 'uart-body uart-orchestrator-body', style: { display: 'none' } },
+    orchestratorRail,
+    el('div', { class: 'uart-main' }, orchestratorSmokeCard, orchestratorCommandsCard),
   )
 
   // history -----------------------------------------------------------------
@@ -675,7 +675,7 @@ export function createUartUi({ root, apiBase = './', locale = 'zh', externalUrl 
 
   refs.railGrip = el('div', { class: 'uart-grip', title: t('dragDivider') })
   refs.body = el('div', { class: 'uart-body is-monitor' }, rail, refs.railGrip, el('div', { class: 'uart-main' }, tapeCard, composer))
-  root.append(header, refs.owner, refs.banner, refs.body, dutBody, historyBody)
+  root.append(header, refs.owner, refs.banner, refs.body, orchestratorBody, historyBody)
 
   // ── rendering ────────────────────────────────────────────────────────────
   /**
@@ -1052,21 +1052,21 @@ export function createUartUi({ root, apiBase = './', locale = 'zh', externalUrl 
     }
   }
 
-  // ── dut page ─────────────────────────────────────────────────────────────
-  function dutProfile() {
-    return state.dut.profiles.find((profile) => profile.name === state.dut.profile) ?? null
+  // ── orchestrator page ─────────────────────────────────────────────────────────────
+  function orchestratorProfile() {
+    return state.orchestrator.profiles.find((profile) => profile.name === state.orchestrator.profile) ?? null
   }
 
   function setTab(kind) {
-    if (kind === 'dut' && !state.dut.available) return
-    state.tab = kind === 'history' ? 'history' : kind === 'dut' ? 'dut' : 'monitor'
+    if (kind === 'orchestrator' && !state.orchestrator.available) return
+    state.tab = kind === 'history' ? 'history' : kind === 'orchestrator' ? 'orchestrator' : 'monitor'
     refs.tabMonitor.classList.toggle('is-active', state.tab === 'monitor')
-    refs.tabDut.classList.toggle('is-active', state.tab === 'dut')
+    refs.tabOrchestrator.classList.toggle('is-active', state.tab === 'orchestrator')
     refs.tabHistory.classList.toggle('is-active', state.tab === 'history')
     refs.body.style.display = state.tab === 'monitor' ? '' : 'none'
-    dutBody.style.display = state.tab === 'dut' ? '' : 'none'
+    orchestratorBody.style.display = state.tab === 'orchestrator' ? '' : 'none'
     historyBody.style.display = state.tab === 'history' ? '' : 'none'
-    if (state.tab === 'dut') refreshDut()
+    if (state.tab === 'orchestrator') refreshOrchestrator()
     if (state.tab === 'history') loadHistory()
   }
 
@@ -1130,54 +1130,54 @@ export function createUartUi({ root, apiBase = './', locale = 'zh', externalUrl 
     refs.histList.append(fragment)
   }
 
-  function selectDutProfile() {
-    const profile = dutProfile()
+  function selectOrchestratorProfile() {
+    const profile = orchestratorProfile()
     if (profile !== null) {
-      state.dutBaud = String(profile.serial.baudRate)
-      refs.dutBaud.value = String(profile.serial.baudRate)
+      state.orchestratorBaud = String(profile.serial.baudRate)
+      refs.orchestratorBaud.value = String(profile.serial.baudRate)
     }
-    renderDutCommands()
-    syncDut()
+    renderOrchestratorCommands()
+    syncOrchestrator()
   }
 
-  function renderDutCommands() {
-    const profile = dutProfile()
-    refs.dutCmds.textContent = ''
-    refs.dutBadges.clear()
+  function renderOrchestratorCommands() {
+    const profile = orchestratorProfile()
+    refs.orchestratorCmds.textContent = ''
+    refs.orchestratorBadges.clear()
     if (profile === null) {
-      refs.dutCmdsCount.textContent = ''
-      refs.dutCmds.append(el('div', { class: 'uart-dut-idle', text: t('dutNoProfile') }))
+      refs.orchestratorCmdsCount.textContent = ''
+      refs.orchestratorCmds.append(el('div', { class: 'uart-orchestrator-idle', text: t('orchestratorNoProfile') }))
       return
     }
-    refs.dutCmdsCount.textContent = t('dutCommandsCount', { count: profile.commands.length })
-    const query = String(state.dut.query ?? '').trim().toLowerCase()
+    refs.orchestratorCmdsCount.textContent = t('orchestratorCommandsCount', { count: profile.commands.length })
+    const query = String(state.orchestrator.query ?? '').trim().toLowerCase()
     const commands = query.length === 0
       ? profile.commands
       : profile.commands.filter((command) => command.name.toLowerCase().includes(query) || String(command.title ?? '').toLowerCase().includes(query))
     if (commands.length === 0) {
-      refs.dutCmds.append(el('div', { class: 'uart-dut-idle', text: t('dutNoMatch') }))
+      refs.orchestratorCmds.append(el('div', { class: 'uart-orchestrator-idle', text: t('orchestratorNoMatch') }))
       return
     }
     for (const command of commands) {
       const badge = el('span', { class: 'uart-verdict', text: '—' })
-      refs.dutBadges.set(command.name, badge)
+      refs.orchestratorBadges.set(command.name, badge)
       const title = el('span', { class: 'uart-cmd-title', text: command.title })
       if (command.fpgaSuitable) title.append(el('span', { class: 'uart-cmd-flag', text: 'FPGA' }))
-      refs.dutCmds.append(
+      refs.orchestratorCmds.append(
         el(
           'div',
           { class: 'uart-cmd' },
           el('span', { class: 'uart-cmd-name', text: command.name }),
           title,
           badge,
-          el('button', { class: 'uart-button is-quiet', type: 'button', text: t('dutRunOne'), onclick: () => runDutCommand(command.name) }),
+          el('button', { class: 'uart-button is-quiet', type: 'button', text: t('orchestratorRunOne'), onclick: () => runOrchestratorCommand(command.name) }),
         ),
       )
     }
   }
 
   function setVerdict(name, verdict, elapsedMs) {
-    const badge = refs.dutBadges.get(name)
+    const badge = refs.orchestratorBadges.get(name)
     if (badge === undefined) return
     const tone = String(verdict ?? 'report').toLowerCase()
     badge.className = 'uart-verdict is-' + tone
@@ -1185,15 +1185,15 @@ export function createUartUi({ root, apiBase = './', locale = 'zh', externalUrl 
   }
 
   /** One-line-per-step text report, for pasting into a bug note or a chat. */
-  function dutReport() {
-    const summary = state.dut.summary
+  function orchestratorReport() {
+    const summary = state.orchestrator.summary
     const lines = []
     if (summary !== null) {
       lines.push(
         `${summary.profile}: PASS ${summary.passed} / FAIL ${summary.failed} / REPORT ${summary.report} (${Math.round(summary.elapsedMs ?? 0)}ms)`,
       )
     }
-    for (const step of state.dut.steps) {
+    for (const step of state.orchestrator.steps) {
       lines.push(`[${step.verdict}] ${step.command} ${step.title ? '- ' + step.title : ''} (${Math.round(step.elapsedMs ?? 0)}ms)`)
       if (Array.isArray(step.failedChecks) && step.failedChecks.length > 0) lines.push(`    failed: ${step.failedChecks.join('; ')}`)
       if (Array.isArray(step.sent) && step.sent.length > 0) lines.push(`    tx: ${step.sent.join(' ')}`)
@@ -1208,7 +1208,7 @@ export function createUartUi({ root, apiBase = './', locale = 'zh', externalUrl 
     const verdict = String(step.verdict ?? 'REPORT')
     const tone = verdict.toLowerCase()
     const icon = verdict === 'PASS' ? '✓' : verdict === 'FAIL' ? '✗' : verdict === 'TIMEOUT' ? '⏱' : '○'
-    const open = state.dut.expanded.has(step.command)
+    const open = state.orchestrator.expanded.has(step.command)
     const hasDetail =
       (Array.isArray(step.failedChecks) && step.failedChecks.length > 0) ||
       (Array.isArray(step.sent) && step.sent.length > 0) ||
@@ -1221,9 +1221,9 @@ export function createUartUi({ root, apiBase = './', locale = 'zh', externalUrl 
         class: `uart-step${hasDetail ? ' is-expandable' : ''}${open ? ' is-open' : ''}`,
         onclick: hasDetail
           ? () => {
-              if (open) state.dut.expanded.delete(step.command)
-              else state.dut.expanded.add(step.command)
-              renderDutSmoke()
+              if (open) state.orchestrator.expanded.delete(step.command)
+              else state.orchestrator.expanded.add(step.command)
+              renderOrchestratorSmoke()
             }
           : undefined,
       },
@@ -1239,7 +1239,7 @@ export function createUartUi({ root, apiBase = './', locale = 'zh', externalUrl 
 
     const detail = el('div', { class: 'uart-step-detail' })
     if (Array.isArray(step.failedChecks) && step.failedChecks.length > 0) {
-      detail.append(el('div', { class: 'uart-step-detail-row is-bad' }, el('span', { class: 'uart-step-detail-key', text: t('dutFailedChecks') }), el('span', { text: step.failedChecks.join('; ') })))
+      detail.append(el('div', { class: 'uart-step-detail-row is-bad' }, el('span', { class: 'uart-step-detail-key', text: t('orchestratorFailedChecks') }), el('span', { text: step.failedChecks.join('; ') })))
     }
     if (Array.isArray(step.sent) && step.sent.length > 0) {
       detail.append(el('div', { class: 'uart-step-detail-row' }, el('span', { class: 'uart-step-detail-key', text: 'TX' }), el('code', { text: step.sent.join(' ') })))
@@ -1251,175 +1251,175 @@ export function createUartUi({ root, apiBase = './', locale = 'zh', externalUrl 
       }
     }
     if (step.note) {
-      detail.append(el('div', { class: 'uart-step-detail-row' }, el('span', { class: 'uart-step-detail-key', text: t('dutNote') }), el('span', { text: step.note })))
+      detail.append(el('div', { class: 'uart-step-detail-row' }, el('span', { class: 'uart-step-detail-key', text: t('orchestratorNote') }), el('span', { text: step.note })))
     }
     return el('div', { class: 'uart-step-block' }, header, detail)
   }
 
-  function renderDutSmoke() {
-    refs.dutSteps.textContent = ''
+  function renderOrchestratorSmoke() {
+    refs.orchestratorSteps.textContent = ''
     // Live progress while a smoke run is in flight.
-    if (state.dut.running && state.dut.total > 0) {
-      const done = state.dut.steps.length
-      const percent = Math.min(100, Math.round((done / state.dut.total) * 100))
-      refs.dutProgress.style.display = ''
-      refs.dutProgress.textContent = ''
-      refs.dutProgress.append(
-        el('div', { class: 'uart-dut-progress-track' }, el('div', { class: 'uart-dut-progress-fill', style: { width: `${percent}%` } })),
-        el('span', { class: 'uart-dut-progress-label', text: `${done}/${state.dut.total}` }),
+    if (state.orchestrator.running && state.orchestrator.total > 0) {
+      const done = state.orchestrator.steps.length
+      const percent = Math.min(100, Math.round((done / state.orchestrator.total) * 100))
+      refs.orchestratorProgress.style.display = ''
+      refs.orchestratorProgress.textContent = ''
+      refs.orchestratorProgress.append(
+        el('div', { class: 'uart-orchestrator-progress-track' }, el('div', { class: 'uart-orchestrator-progress-fill', style: { width: `${percent}%` } })),
+        el('span', { class: 'uart-orchestrator-progress-label', text: `${done}/${state.orchestrator.total}` }),
       )
     } else {
-      refs.dutProgress.style.display = 'none'
+      refs.orchestratorProgress.style.display = 'none'
     }
-    if (state.dut.steps.length === 0) {
-      refs.dutSteps.append(
+    if (state.orchestrator.steps.length === 0) {
+      refs.orchestratorSteps.append(
         el(
           'div',
           { class: 'uart-empty' },
-          el('div', { class: 'uart-empty-title', text: state.dut.running ? t('dutRunning') : t('dutEmpty') }),
-          el('div', { class: 'uart-empty-body', text: state.dut.running ? t('dutWaiting') : t('dutEmptyBody') }),
+          el('div', { class: 'uart-empty-title', text: state.orchestrator.running ? t('orchestratorRunning') : t('orchestratorEmpty') }),
+          el('div', { class: 'uart-empty-body', text: state.orchestrator.running ? t('orchestratorWaiting') : t('orchestratorEmptyBody') }),
         ),
       )
     } else {
-      for (const step of state.dut.steps) refs.dutSteps.append(stepRow(step))
-      if (state.dut.running) {
-        refs.dutSteps.append(
-          el('div', { class: 'uart-step is-pending' }, el('span', { class: 'uart-step-icon', text: '…' }), el('span', { class: 'uart-step-cmd', text: t('dutRunning') })),
+      for (const step of state.orchestrator.steps) refs.orchestratorSteps.append(stepRow(step))
+      if (state.orchestrator.running) {
+        refs.orchestratorSteps.append(
+          el('div', { class: 'uart-step is-pending' }, el('span', { class: 'uart-step-icon', text: '…' }), el('span', { class: 'uart-step-cmd', text: t('orchestratorRunning') })),
         )
       }
     }
-    refs.dutSteps.scrollTop = refs.dutSteps.scrollHeight
-    const summary = state.dut.summary
-    refs.dutSummary.className = 'uart-count' + (summary === null ? '' : summary.failed > 0 ? ' is-bad' : ' is-good')
-    refs.dutSummary.textContent = summary === null ? '' : t('dutSummary', { passed: summary.passed, failed: summary.failed, ms: Math.round(summary.elapsedMs ?? 0) })
+    refs.orchestratorSteps.scrollTop = refs.orchestratorSteps.scrollHeight
+    const summary = state.orchestrator.summary
+    refs.orchestratorSummary.className = 'uart-count' + (summary === null ? '' : summary.failed > 0 ? ' is-bad' : ' is-good')
+    refs.orchestratorSummary.textContent = summary === null ? '' : t('orchestratorSummary', { passed: summary.passed, failed: summary.failed, ms: Math.round(summary.elapsedMs ?? 0) })
   }
 
-  function syncDut() {
-    const status = state.dut.status
+  function syncOrchestrator() {
+    const status = state.orchestrator.status
     const connected = status !== null && status.connected === true
-    const profile = dutProfile()
-    const active = state.dut.active
-    refs.dutProfile.disabled = connected || state.dut.connecting
-    refs.dutPort.disabled = connected || state.dut.connecting
-    refs.dutBaud.disabled = connected || state.dut.connecting
-    refs.dutConnect.style.display = connected ? 'none' : ''
-    refs.dutDisconnect.style.display = connected ? '' : 'none'
-    refs.dutConnect.disabled = state.dut.connecting || profile === null || (active === null && String(state.dutPort ?? '').trim().length === 0)
-    refs.dutConnect.textContent = state.dut.connecting ? t('dutConnecting') : t('dutConnect')
-    refs.dutDesc.textContent = profile === null ? '' : profile.description
+    const profile = orchestratorProfile()
+    const active = state.orchestrator.active
+    refs.orchestratorProfile.disabled = connected || state.orchestrator.connecting
+    refs.orchestratorPort.disabled = connected || state.orchestrator.connecting
+    refs.orchestratorBaud.disabled = connected || state.orchestrator.connecting
+    refs.orchestratorConnect.style.display = connected ? 'none' : ''
+    refs.orchestratorDisconnect.style.display = connected ? '' : 'none'
+    refs.orchestratorConnect.disabled = state.orchestrator.connecting || profile === null || (active === null && String(state.orchestratorPort ?? '').trim().length === 0)
+    refs.orchestratorConnect.textContent = state.orchestrator.connecting ? t('orchestratorConnecting') : t('orchestratorConnect')
+    refs.orchestratorDesc.textContent = profile === null ? '' : profile.description
     // Only offer low-power coverage when the profile actually declares it.
     const lowPowerCount = Array.isArray(profile?.lowPower) ? profile.lowPower.length : 0
-    refs.dutLowLabel.style.display = lowPowerCount > 0 ? '' : 'none'
+    refs.orchestratorLowLabel.style.display = lowPowerCount > 0 ? '' : 'none'
     if (lowPowerCount === 0) {
-      refs.dutLow.checked = false
-      state.dut.includeLowPower = false
+      refs.orchestratorLow.checked = false
+      state.orchestrator.includeLowPower = false
     }
     // Frame contract and wiring, so the operator can sanity-check the hookup
     // without opening the profile JSON.
-    refs.dutMeta.textContent = profile === null
+    refs.orchestratorMeta.textContent = profile === null
       ? ''
       : [
-          t('dutFrameMeta', { length: profile.frame?.length ?? '?', checksum: profile.frame?.checksum ?? '?' }),
-          profile.serial?.wiring ? t('dutWiringMeta', { wiring: profile.serial.wiring }) : '',
+          t('orchestratorFrameMeta', { length: profile.frame?.length ?? '?', checksum: profile.frame?.checksum ?? '?' }),
+          profile.serial?.wiring ? t('orchestratorWiringMeta', { wiring: profile.serial.wiring }) : '',
         ].filter((part) => part.length > 0).join(' · ')
-    if (connected) refs.dutTarget.textContent = t('dutConnectedHint', { profile: status.profile ?? '', port: status.port ?? '', baud: status.baudRate ?? '' })
-    else if (active !== null) refs.dutTarget.textContent = t('dutAttachHint', { port: active.port ?? '' })
-    else refs.dutTarget.textContent = t('dutOpenHint')
-    refs.dutStatus.textContent = ''
+    if (connected) refs.orchestratorTarget.textContent = t('orchestratorConnectedHint', { profile: status.profile ?? '', port: status.port ?? '', baud: status.baudRate ?? '' })
+    else if (active !== null) refs.orchestratorTarget.textContent = t('orchestratorAttachHint', { port: active.port ?? '' })
+    else refs.orchestratorTarget.textContent = t('orchestratorOpenHint')
+    refs.orchestratorStatus.textContent = ''
     if (!connected) {
-      refs.dutStatus.append(el('p', { class: 'uart-dut-idle', text: t('dutIdle') }))
+      refs.orchestratorStatus.append(el('p', { class: 'uart-orchestrator-idle', text: t('orchestratorIdle') }))
     } else {
       const stats = status.stats ?? { framesParsed: 0, framesSent: 0, noiseBytes: 0 }
       const rows = [
-        [t('dutLabelProfile'), String(status.profile ?? '') + ' · ' + String(status.chip ?? '')],
-        [t('dutLabelPort'), String(status.port ?? '—') + ' @ ' + String(status.baudRate ?? '—')],
-        [t('dutLabelFrames'), t('dutFramesValue', { parsed: stats.framesParsed, sent: stats.framesSent })],
-        [t('dutLabelNoise'), t('bytes', { count: stats.noiseBytes })],
+        [t('orchestratorLabelProfile'), String(status.profile ?? '') + ' · ' + String(status.chip ?? '')],
+        [t('orchestratorLabelPort'), String(status.port ?? '—') + ' @ ' + String(status.baudRate ?? '—')],
+        [t('orchestratorLabelFrames'), t('orchestratorFramesValue', { parsed: stats.framesParsed, sent: stats.framesSent })],
+        [t('orchestratorLabelNoise'), t('bytes', { count: stats.noiseBytes })],
       ]
       for (const [key, value] of rows) {
-        refs.dutStatus.append(
+        refs.orchestratorStatus.append(
           el('div', { class: 'uart-kv-row' }, el('span', { class: 'uart-kv-key', text: key }), el('span', { class: 'uart-kv-value', text: value })),
         )
       }
     }
-    refs.dutSmoke.disabled = !connected || state.dut.running
-    refs.dutSmoke.textContent = state.dut.running ? t('dutRunning') : t('dutRunSmoke')
-    refs.dutLow.disabled = state.dut.running || !connected
-    for (const button of refs.dutCmds.querySelectorAll('button')) button.disabled = !connected || state.dut.running
+    refs.orchestratorSmoke.disabled = !connected || state.orchestrator.running
+    refs.orchestratorSmoke.textContent = state.orchestrator.running ? t('orchestratorRunning') : t('orchestratorRunSmoke')
+    refs.orchestratorLow.disabled = state.orchestrator.running || !connected
+    for (const button of refs.orchestratorCmds.querySelectorAll('button')) button.disabled = !connected || state.orchestrator.running
   }
 
-  async function loadDut() {
+  async function loadOrchestrator() {
     try {
-      const data = await readJson('api/dut')
-      state.dut.available = data?.available === true
-      if (state.dut.available) {
-        state.dut.profiles = Array.isArray(data?.profiles) ? data.profiles : []
-        state.dut.status = data?.status ?? null
-        state.dut.active = data?.active ?? null
-        if (!state.dut.profiles.some((profile) => profile.name === state.dut.profile)) {
-          state.dut.profile = state.dut.profiles.length > 0 ? state.dut.profiles[0].name : ''
+      const data = await readJson('api/orchestrator')
+      state.orchestrator.available = data?.available === true
+      if (state.orchestrator.available) {
+        state.orchestrator.profiles = Array.isArray(data?.profiles) ? data.profiles : []
+        state.orchestrator.status = data?.status ?? null
+        state.orchestrator.active = data?.active ?? null
+        if (!state.orchestrator.profiles.some((profile) => profile.name === state.orchestrator.profile)) {
+          state.orchestrator.profile = state.orchestrator.profiles.length > 0 ? state.orchestrator.profiles[0].name : ''
         }
-        refs.dutProfile.textContent = ''
-        for (const profile of state.dut.profiles) {
-          refs.dutProfile.append(el('option', { value: profile.name, text: profile.name + ' · ' + profile.chip }))
+        refs.orchestratorProfile.textContent = ''
+        for (const profile of state.orchestrator.profiles) {
+          refs.orchestratorProfile.append(el('option', { value: profile.name, text: profile.name + ' · ' + profile.chip }))
         }
-        refs.dutProfile.value = state.dut.profile
+        refs.orchestratorProfile.value = state.orchestrator.profile
         // The tab row is always visible now (History lives there too); only the
-        // DUT tab itself is disabled when this Hub has no DUT layer.
-        refs.tabDut.disabled = state.dut.profiles.length === 0
-        refs.tabDut.title = state.dut.profiles.length === 0 ? t('dutUnavailable') : ''
-        selectDutProfile()
+        // Orchestrator tab itself is disabled when this Hub has no Orchestrator layer.
+        refs.tabOrchestrator.disabled = state.orchestrator.profiles.length === 0
+        refs.tabOrchestrator.title = state.orchestrator.profiles.length === 0 ? t('orchestratorUnavailable') : ''
+        selectOrchestratorProfile()
       } else {
-        refs.tabDut.disabled = true
+        refs.tabOrchestrator.disabled = true
       }
     } catch {
-      state.dut.available = false
-      refs.tabDut.disabled = true
+      state.orchestrator.available = false
+      refs.tabOrchestrator.disabled = true
     }
-    syncDut()
-    renderDutSmoke()
+    syncOrchestrator()
+    renderOrchestratorSmoke()
   }
 
-  async function refreshDut() {
+  async function refreshOrchestrator() {
     try {
-      const data = await readJson('api/dut/status')
-      state.dut.status = data?.status ?? null
-      state.dut.active = data?.active ?? null
-      state.dut.available = data?.available !== false && state.dut.profiles.length > 0
-      syncDut()
+      const data = await readJson('api/orchestrator/status')
+      state.orchestrator.status = data?.status ?? null
+      state.orchestrator.active = data?.active ?? null
+      state.orchestrator.available = data?.available !== false && state.orchestrator.profiles.length > 0
+      syncOrchestrator()
     } catch {
-      /* keep the last known DUT state; the next poll retries */
+      /* keep the last known Orchestrator state; the next poll retries */
     }
   }
 
-  async function connectDut() {
-    if (state.dut.profile === '') return
-    state.dut.connecting = true
-    syncDut()
+  async function connectOrchestrator() {
+    if (state.orchestrator.profile === '') return
+    state.orchestrator.connecting = true
+    syncOrchestrator()
     try {
-      const opening = state.dut.active === null
-      const path = opening ? String(state.dutPort ?? '').trim() : undefined
-      const baud = opening && String(state.dutBaud ?? '').trim() !== '' ? Number(state.dutBaud) : undefined
-      const data = await postJson('api/dut/connect', { profile: state.dut.profile, path, baudRate: baud })
-      state.dut.status = data?.status ?? null
-      state.dut.active = data?.active ?? null
+      const opening = state.orchestrator.active === null
+      const path = opening ? String(state.orchestratorPort ?? '').trim() : undefined
+      const baud = opening && String(state.orchestratorBaud ?? '').trim() !== '' ? Number(state.orchestratorBaud) : undefined
+      const data = await postJson('api/orchestrator/connect', { profile: state.orchestrator.profile, path, baudRate: baud })
+      state.orchestrator.status = data?.status ?? null
+      state.orchestrator.active = data?.active ?? null
       if (data?.connectionId && data.connectionId !== state.connectionId) attach(data.connectionId, data.opened === true)
-      notify({ tone: 'ok', text: t('dutConnected', { profile: state.dut.profile, port: data?.status?.port ?? '' }) })
+      notify({ tone: 'ok', text: t('orchestratorConnected', { profile: state.orchestrator.profile, port: data?.status?.port ?? '' }) })
     } catch (error) {
-      notify({ tone: 'error', text: t('dutFailed', { reason: errorText(error) }) })
+      notify({ tone: 'error', text: t('orchestratorFailed', { reason: errorText(error) }) })
     } finally {
-      state.dut.connecting = false
-      syncDut()
+      state.orchestrator.connecting = false
+      syncOrchestrator()
     }
   }
 
-  async function disconnectDut() {
+  async function disconnectOrchestrator() {
     const closePort = state.ownsPort === true
     try {
-      const data = await postJson('api/dut/disconnect', { closePort })
-      state.dut.status = data?.status ?? null
-      state.dut.active = data?.active ?? null
-      notify({ tone: 'info', text: t('dutDisconnected') })
+      const data = await postJson('api/orchestrator/disconnect', { closePort })
+      state.orchestrator.status = data?.status ?? null
+      state.orchestrator.active = data?.active ?? null
+      notify({ tone: 'info', text: t('orchestratorDisconnected') })
       if (closePort) {
         closeStream()
         detachLocal()
@@ -1427,53 +1427,53 @@ export function createUartUi({ root, apiBase = './', locale = 'zh', externalUrl 
         renderTape()
       }
     } catch (error) {
-      notify({ tone: 'error', text: t('dutFailed', { reason: errorText(error) }) })
+      notify({ tone: 'error', text: t('orchestratorFailed', { reason: errorText(error) }) })
     }
-    syncDut()
+    syncOrchestrator()
   }
 
   async function runSmoke() {
-    if (state.dut.running) return
-    state.dut.running = true
-    state.dut.steps = []
-    state.dut.summary = null
-    state.dut.total = 0
-    state.dut.expanded.clear()
-    renderDutSmoke()
-    syncDut()
+    if (state.orchestrator.running) return
+    state.orchestrator.running = true
+    state.orchestrator.steps = []
+    state.orchestrator.summary = null
+    state.orchestrator.total = 0
+    state.orchestrator.expanded.clear()
+    renderOrchestratorSmoke()
+    syncOrchestrator()
     try {
-      const data = await postJson('api/dut/smoke', { includeLowPower: state.dut.includeLowPower })
+      const data = await postJson('api/orchestrator/smoke', { includeLowPower: state.orchestrator.includeLowPower })
       const result = data?.result ?? null
-      state.dut.summary = result
-      if (result !== null && Array.isArray(result.steps)) state.dut.steps = result.steps
+      state.orchestrator.summary = result
+      if (result !== null && Array.isArray(result.steps)) state.orchestrator.steps = result.steps
       if (result !== null) {
         for (const step of result.steps ?? []) setVerdict(step.command, step.verdict, step.elapsedMs)
         notify({
           tone: result.allPassed ? 'ok' : 'error',
-          text: result.allPassed ? t('dutSmokeDone', result) : t('dutSmokeFailed', result),
+          text: result.allPassed ? t('orchestratorSmokeDone', result) : t('orchestratorSmokeFailed', result),
         })
       }
     } catch (error) {
-      notify({ tone: 'error', text: t('dutFailed', { reason: errorText(error) }) })
+      notify({ tone: 'error', text: t('orchestratorFailed', { reason: errorText(error) }) })
     } finally {
-      state.dut.running = false
-      renderDutSmoke()
-      syncDut()
+      state.orchestrator.running = false
+      renderOrchestratorSmoke()
+      syncOrchestrator()
     }
   }
 
-  async function runDutCommand(name) {
-    if (state.dut.running) return
+  async function runOrchestratorCommand(name) {
+    if (state.orchestrator.running) return
     try {
-      const data = await postJson('api/dut/run', { name })
+      const data = await postJson('api/orchestrator/run', { name })
       const result = data?.result
       if (result !== undefined) setVerdict(result.command, result.verdict, result.elapsedMs)
       notify({
         tone: result !== undefined && (result.verdict === 'PASS' || result.verdict === 'REPORT') ? 'ok' : 'error',
-        text: t('dutRunDone', { command: name, verdict: result?.verdict ?? '?', ms: Math.round(result?.elapsedMs ?? 0) }),
+        text: t('orchestratorRunDone', { command: name, verdict: result?.verdict ?? '?', ms: Math.round(result?.elapsedMs ?? 0) }),
       })
     } catch (error) {
-      notify({ tone: 'error', text: t('dutFailed', { reason: errorText(error) }) })
+      notify({ tone: 'error', text: t('orchestratorFailed', { reason: errorText(error) }) })
     }
   }
 
@@ -1512,23 +1512,23 @@ export function createUartUi({ root, apiBase = './', locale = 'zh', externalUrl 
         /* a malformed frame must not kill the stream */
       }
     })
-    source.addEventListener('dut', (event) => {
+    source.addEventListener('orchestrator', (event) => {
       try {
         const payload = JSON.parse(event.data)
         if (payload?.kind === 'smoke-start') {
-          state.dut.running = true
-          state.dut.steps = []
-          state.dut.summary = null
-          state.dut.total = Number(payload.total ?? 0)
-          renderDutSmoke()
-          syncDut()
+          state.orchestrator.running = true
+          state.orchestrator.steps = []
+          state.orchestrator.summary = null
+          state.orchestrator.total = Number(payload.total ?? 0)
+          renderOrchestratorSmoke()
+          syncOrchestrator()
         } else if (payload?.kind === 'smoke-step' && payload.step) {
-          state.dut.steps.push(payload.step)
-          renderDutSmoke()
+          state.orchestrator.steps.push(payload.step)
+          renderOrchestratorSmoke()
           setVerdict(payload.step.command, payload.step.verdict, payload.step.elapsedMs)
         } else if (payload?.kind === 'smoke-done' && payload.summary) {
-          state.dut.summary = payload.summary
-          renderDutSmoke()
+          state.orchestrator.summary = payload.summary
+          renderOrchestratorSmoke()
         }
       } catch {
         /* a malformed progress event must not kill the stream */
@@ -1733,9 +1733,9 @@ export function createUartUi({ root, apiBase = './', locale = 'zh', externalUrl 
   sync()
   loadPorts()
   attachIfNeeded()
-  loadDut()
+  loadOrchestrator()
   state.timer = setInterval(() => attachIfNeeded(), 1500)
-  state.dut.timer = setInterval(() => { if (state.tab === 'dut') refreshDut() }, 3000)
+  state.orchestrator.timer = setInterval(() => { if (state.tab === 'orchestrator') refreshOrchestrator() }, 3000)
   // One tick per second: slide the 60s window and repaint the strip.
   state.rateTimer = setInterval(() => {
     state.rate.push(0)
@@ -1746,7 +1746,7 @@ export function createUartUi({ root, apiBase = './', locale = 'zh', externalUrl 
   return {
     destroy() {
       clearInterval(state.timer)
-      clearInterval(state.dut.timer)
+      clearInterval(state.orchestrator.timer)
       clearInterval(state.rateTimer)
       clearTimeout(refs.bannerTimer)
       if (sizeObserver !== null) sizeObserver.disconnect()
@@ -1851,62 +1851,62 @@ const ZH = {
   monitorAttached: '已挂上当前串口会话',
   streamClosed: '串口已关闭',
   tabMonitor: '监视',
-  tabDut: '编排',
+  tabOrchestrator: '编排',
   tabHistory: '历史',
-  dutUnavailable: '当前 Hub 没有 DUT 层',
+  orchestratorUnavailable: '当前 Hub 没有编排层',
   historyCount: '{shown} / {total} 条',
   historyEmpty: '暂无历史',
   historyEmptyBody: '这个 Hub 启动以来收到的帧会一直留在这里，重连也不会清空。',
   historyFailed: '读取历史失败：{reason}',
   copy: '复制',
-  dutSectionProfile: '编排上位机',
-  dutSectionStatus: '状态',
-  dutProfile: '设备配置',
-  dutPort: '串口',
-  dutBaud: '波特率',
-  dutBaudAuto: '跟随配置',
-  dutConnect: '连接 DUT',
-  dutConnecting: '连接中…',
-  dutDisconnect: '断开 DUT',
-  dutIdle: '未连接 DUT。选好配置后连接，或让 Agent 先跑 dut_connect。',
-  dutAttachHint: '将附加到当前串口会话 {port}',
-  dutOpenHint: '将打开所选串口并挂上该配置',
-  dutConnectedHint: '{profile} · {port} @ {baud}',
-  dutConnected: '编排上位机已连接：{profile} @ {port}',
-  dutDisconnected: '编排上位机已断开',
-  dutSmoke: '冒烟测试',
-  dutCopyReport: '复制结果',
-  dutCopyReportHint: '把本次冒烟结果（判定、耗时、收发帧、未过项）复制为文本',
-  dutSearchCommands: '搜索命令',
-  dutNoMatch: '没有匹配的命令',
-  dutFailedChecks: '未过项',
-  dutNote: '备注',
-  dutFrameMeta: '帧 {length}B · 校验 {checksum}',
-  dutWiringMeta: '接线 {wiring}',
-  dutRunSmoke: '运行冒烟',
-  dutRunning: '运行中…',
-  dutLowPower: '含低功耗',
+  orchestratorSectionProfile: '编排上位机',
+  orchestratorSectionStatus: '状态',
+  orchestratorProfile: '设备配置',
+  orchestratorPort: '串口',
+  orchestratorBaud: '波特率',
+  orchestratorBaudAuto: '跟随配置',
+  orchestratorConnect: '连接编排',
+  orchestratorConnecting: '连接中…',
+  orchestratorDisconnect: '断开编排',
+  orchestratorIdle: '未连接编排。选好配置后连接，或让 Agent 先跑 orchestrator_connect。',
+  orchestratorAttachHint: '将附加到当前串口会话 {port}',
+  orchestratorOpenHint: '将打开所选串口并挂上该配置',
+  orchestratorConnectedHint: '{profile} · {port} @ {baud}',
+  orchestratorConnected: '编排上位机已连接：{profile} @ {port}',
+  orchestratorDisconnected: '编排上位机已断开',
+  orchestratorSmoke: '冒烟测试',
+  orchestratorCopyReport: '复制结果',
+  orchestratorCopyReportHint: '把本次冒烟结果（判定、耗时、收发帧、未过项）复制为文本',
+  orchestratorSearchCommands: '搜索命令',
+  orchestratorNoMatch: '没有匹配的命令',
+  orchestratorFailedChecks: '未过项',
+  orchestratorNote: '备注',
+  orchestratorFrameMeta: '帧 {length}B · 校验 {checksum}',
+  orchestratorWiringMeta: '接线 {wiring}',
+  orchestratorRunSmoke: '运行冒烟',
+  orchestratorRunning: '运行中…',
+  orchestratorLowPower: '含低功耗',
   tallyRx: 'RX {count}',
   tallyTx: 'TX {count}',
   tallyHint: '本次会话累计接收 / 发送的帧数',
   rateHint: '最近 5 秒的平均帧率；折线是最近 60 秒的走势',
-  dutCommands: '命令',
-  dutCommandsCount: '{count} 条',
-  dutNoProfile: '没有可用的编排配置',
-  dutRunOne: '运行',
-  dutEmpty: '还没有结果',
-  dutEmptyBody: '连接 DUT 后运行冒烟，或从下面挑一条命令单跑。',
-  dutWaiting: '正在执行，结果会逐条出现…',
-  dutSummary: 'PASS {passed} · FAIL {failed} · {ms}ms',
-  dutSmokeDone: '冒烟通过：PASS {passed} / FAIL {failed}（{elapsedMs}ms）',
-  dutSmokeFailed: '冒烟未通过：PASS {passed} / FAIL {failed}（{elapsedMs}ms）',
-  dutRunDone: '{command} → {verdict}（{ms}ms）',
-  dutFailed: '编排操作失败：{reason}',
-  dutLabelProfile: '配置',
-  dutLabelPort: '串口',
-  dutLabelFrames: '帧',
-  dutLabelNoise: '噪声',
-  dutFramesValue: '解析 {parsed} · 发送 {sent}',
+  orchestratorCommands: '命令',
+  orchestratorCommandsCount: '{count} 条',
+  orchestratorNoProfile: '没有可用的编排配置',
+  orchestratorRunOne: '运行',
+  orchestratorEmpty: '还没有结果',
+  orchestratorEmptyBody: '连接编排 后运行冒烟，或从下面挑一条命令单跑。',
+  orchestratorWaiting: '正在执行，结果会逐条出现…',
+  orchestratorSummary: 'PASS {passed} · FAIL {failed} · {ms}ms',
+  orchestratorSmokeDone: '冒烟通过：PASS {passed} / FAIL {failed}（{elapsedMs}ms）',
+  orchestratorSmokeFailed: '冒烟未通过：PASS {passed} / FAIL {failed}（{elapsedMs}ms）',
+  orchestratorRunDone: '{command} → {verdict}（{ms}ms）',
+  orchestratorFailed: '编排操作失败：{reason}',
+  orchestratorLabelProfile: '配置',
+  orchestratorLabelPort: '串口',
+  orchestratorLabelFrames: '帧',
+  orchestratorLabelNoise: '噪声',
+  orchestratorFramesValue: '解析 {parsed} · 发送 {sent}',
 }
 
 const EN = {
@@ -1986,62 +1986,62 @@ const EN = {
   monitorAttached: 'Attached to the current serial session',
   streamClosed: 'The port was closed',
   tabMonitor: 'Monitor',
-  tabDut: 'Orchestrator',
+  tabOrchestrator: 'Orchestrator',
   tabHistory: 'History',
-  dutUnavailable: 'This Hub has no DUT layer',
+  orchestratorUnavailable: 'This Hub has no Orchestrator layer',
   historyCount: '{shown} / {total}',
   historyEmpty: 'No history yet',
   historyEmptyBody: 'Frames received since this Hub started stay here, even across reconnects.',
   historyFailed: 'Could not read history: {reason}',
   copy: 'Copy',
-  dutSectionProfile: 'Orchestrator',
-  dutSectionStatus: 'Status',
-  dutProfile: 'Profile',
-  dutPort: 'Port',
-  dutBaud: 'Baud rate',
-  dutBaudAuto: 'From profile',
-  dutConnect: 'Connect DUT',
-  dutConnecting: 'Connecting…',
-  dutDisconnect: 'Disconnect DUT',
-  dutIdle: 'No DUT session. Pick a profile and connect, or let the Agent run dut_connect first.',
-  dutAttachHint: 'Will attach to the open serial session {port}',
-  dutOpenHint: 'Will open the selected port with this profile',
-  dutConnectedHint: '{profile} · {port} at {baud}',
-  dutConnected: 'Orchestrator connected: {profile} on {port}',
-  dutDisconnected: 'Orchestrator disconnected',
-  dutSmoke: 'Smoke test',
-  dutCopyReport: 'Copy result',
-  dutCopyReportHint: 'Copy this smoke run as text: verdicts, timings, frames, failed checks',
-  dutSearchCommands: 'Search commands',
-  dutNoMatch: 'No matching command',
-  dutFailedChecks: 'Failed',
-  dutNote: 'Note',
-  dutFrameMeta: 'frame {length}B · checksum {checksum}',
-  dutWiringMeta: 'wiring {wiring}',
-  dutRunSmoke: 'Run smoke',
-  dutRunning: 'Running…',
-  dutLowPower: 'Low power',
+  orchestratorSectionProfile: 'Orchestrator',
+  orchestratorSectionStatus: 'Status',
+  orchestratorProfile: 'Profile',
+  orchestratorPort: 'Port',
+  orchestratorBaud: 'Baud rate',
+  orchestratorBaudAuto: 'From profile',
+  orchestratorConnect: 'Connect Orchestrator',
+  orchestratorConnecting: 'Connecting…',
+  orchestratorDisconnect: 'Disconnect Orchestrator',
+  orchestratorIdle: 'No Orchestrator session. Pick a profile and connect, or let the Agent run orchestrator_connect first.',
+  orchestratorAttachHint: 'Will attach to the open serial session {port}',
+  orchestratorOpenHint: 'Will open the selected port with this profile',
+  orchestratorConnectedHint: '{profile} · {port} at {baud}',
+  orchestratorConnected: 'Orchestrator connected: {profile} on {port}',
+  orchestratorDisconnected: 'Orchestrator disconnected',
+  orchestratorSmoke: 'Smoke test',
+  orchestratorCopyReport: 'Copy result',
+  orchestratorCopyReportHint: 'Copy this smoke run as text: verdicts, timings, frames, failed checks',
+  orchestratorSearchCommands: 'Search commands',
+  orchestratorNoMatch: 'No matching command',
+  orchestratorFailedChecks: 'Failed',
+  orchestratorNote: 'Note',
+  orchestratorFrameMeta: 'frame {length}B · checksum {checksum}',
+  orchestratorWiringMeta: 'wiring {wiring}',
+  orchestratorRunSmoke: 'Run smoke',
+  orchestratorRunning: 'Running…',
+  orchestratorLowPower: 'Low power',
   tallyRx: 'RX {count}',
   tallyTx: 'TX {count}',
   tallyHint: 'Frames received / sent in this session',
   rateHint: 'Average frame rate over the last 5 s; the line is the last 60 s',
-  dutCommands: 'Commands',
-  dutCommandsCount: '{count} commands',
-  dutNoProfile: 'No DUT profile is available',
-  dutRunOne: 'Run',
-  dutEmpty: 'No results yet',
-  dutEmptyBody: 'Connect a DUT and run the smoke test, or run a single command below.',
-  dutWaiting: 'Running — results appear as each step finishes…',
-  dutSummary: 'PASS {passed} · FAIL {failed} · {ms}ms',
-  dutSmokeDone: 'Smoke passed: PASS {passed} / FAIL {failed} ({elapsedMs}ms)',
-  dutSmokeFailed: 'Smoke failed: PASS {passed} / FAIL {failed} ({elapsedMs}ms)',
-  dutRunDone: '{command} → {verdict} ({ms}ms)',
-  dutFailed: 'Orchestrator operation failed: {reason}',
-  dutLabelProfile: 'Profile',
-  dutLabelPort: 'Port',
-  dutLabelFrames: 'Frames',
-  dutLabelNoise: 'Noise',
-  dutFramesValue: '{parsed} parsed · {sent} sent',
+  orchestratorCommands: 'Commands',
+  orchestratorCommandsCount: '{count} commands',
+  orchestratorNoProfile: 'No Orchestrator profile is available',
+  orchestratorRunOne: 'Run',
+  orchestratorEmpty: 'No results yet',
+  orchestratorEmptyBody: 'Connect a Orchestrator and run the smoke test, or run a single command below.',
+  orchestratorWaiting: 'Running — results appear as each step finishes…',
+  orchestratorSummary: 'PASS {passed} · FAIL {failed} · {ms}ms',
+  orchestratorSmokeDone: 'Smoke passed: PASS {passed} / FAIL {failed} ({elapsedMs}ms)',
+  orchestratorSmokeFailed: 'Smoke failed: PASS {passed} / FAIL {failed} ({elapsedMs}ms)',
+  orchestratorRunDone: '{command} → {verdict} ({ms}ms)',
+  orchestratorFailed: 'Orchestrator operation failed: {reason}',
+  orchestratorLabelProfile: 'Profile',
+  orchestratorLabelPort: 'Port',
+  orchestratorLabelFrames: 'Frames',
+  orchestratorLabelNoise: 'Noise',
+  orchestratorFramesValue: '{parsed} parsed · {sent} sent',
 }
 
 const CSS = `
@@ -2281,46 +2281,46 @@ const CSS = `
 .uart-tab { height: 24px; padding: 0 12px; border: 0; border-radius: 7px; background: transparent; color: var(--uart-text-2); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; }
 .uart-tab:hover:not(.is-active) { color: var(--uart-text); }
 .uart-tab.is-active { background: var(--uart-surface); color: var(--uart-text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
-.uart-dut-desc { margin: 0; color: var(--uart-text-2); font-size: 11.5px; line-height: 1.55; }
-.uart-dut-meta { margin: 0; color: var(--uart-ink-3); font-size: 11px; line-height: 1.5; }
-.uart-dut-target { margin: 0; color: var(--uart-text-2); font-size: 11px; line-height: 1.5; }
-.uart-dut-kv { display: flex; flex-direction: column; gap: 6px; }
+.uart-orchestrator-desc { margin: 0; color: var(--uart-text-2); font-size: 11.5px; line-height: 1.55; }
+.uart-orchestrator-meta { margin: 0; color: var(--uart-ink-3); font-size: 11px; line-height: 1.5; }
+.uart-orchestrator-target { margin: 0; color: var(--uart-text-2); font-size: 11px; line-height: 1.5; }
+.uart-orchestrator-kv { display: flex; flex-direction: column; gap: 6px; }
 .uart-kv-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 11.5px; }
 .uart-kv-key { color: var(--uart-text-2); white-space: nowrap; }
 .uart-kv-value { color: var(--uart-text); text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
-.uart-dut-idle { margin: 0; color: var(--uart-text-2); font-size: 11.5px; line-height: 1.6; }
-.uart-dut-smoke { flex: 1 1 56%; min-height: 168px; overflow: hidden; }
-/* The DUT page is a single stacked column at EVERY width.
+.uart-orchestrator-idle { margin: 0; color: var(--uart-text-2); font-size: 11.5px; line-height: 1.6; }
+.uart-orchestrator-smoke { flex: 1 1 56%; min-height: 168px; overflow: hidden; }
+/* The Orchestrator page is a single stacked column at EVERY width.
    Two-column grid on this page produced repeated misalignment: the parameter
    card and the smoke card fought over the row height and the connect button
    ended up painted on top of the smoke header. Stacking removes that whole
    class of bug; on wide screens the form itself spreads out horizontally. */
-.uart-dut-body {
+.uart-orchestrator-body {
   display: flex;
   flex-direction: column;
   gap: 14px;
   overflow-y: auto;
   overflow-x: hidden;
 }
-.uart-dut-body > .uart-rail { flex: none; width: 100%; height: auto; overflow: visible; }
-.uart-dut-body > .uart-main { flex: none; width: 100%; min-height: 480px; }
+.uart-orchestrator-body > .uart-rail { flex: none; width: 100%; height: auto; overflow: visible; }
+.uart-orchestrator-body > .uart-main { flex: none; width: 100%; min-height: 480px; }
 /* Wide screens: the profile form lays out in columns instead of a tall card. */
-.uart-dut-body > .uart-rail > .uart-dut-form {
+.uart-orchestrator-body > .uart-rail > .uart-orchestrator-form {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   align-items: end;
   gap: 10px;
 }
-.uart-dut-body > .uart-rail > .uart-dut-form > .uart-group-title,
-.uart-dut-body > .uart-rail > .uart-dut-form > .uart-dut-desc,
-.uart-dut-body > .uart-rail > .uart-dut-form > .uart-dut-meta,
-.uart-dut-body > .uart-rail > .uart-dut-form > .uart-dut-target { grid-column: 1 / -1; }
-.uart-dut-body > .uart-rail > .uart-dut-form > .uart-button { grid-column: 1 / -1; }
-.uart-dut-commands { flex: 1 1 44%; min-height: 140px; overflow: hidden; }
-.uart-dut-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--uart-border); flex-wrap: wrap; }
-.uart-dut-title { font-size: 12px; font-weight: 600; }
-.uart-dut-head .uart-button.is-primary { height: 26px; padding: 0 10px; font-size: 11.5px; }
-.uart-dut-steps { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 4px 0 8px; }
+.uart-orchestrator-body > .uart-rail > .uart-orchestrator-form > .uart-group-title,
+.uart-orchestrator-body > .uart-rail > .uart-orchestrator-form > .uart-orchestrator-desc,
+.uart-orchestrator-body > .uart-rail > .uart-orchestrator-form > .uart-orchestrator-meta,
+.uart-orchestrator-body > .uart-rail > .uart-orchestrator-form > .uart-orchestrator-target { grid-column: 1 / -1; }
+.uart-orchestrator-body > .uart-rail > .uart-orchestrator-form > .uart-button { grid-column: 1 / -1; }
+.uart-orchestrator-commands { flex: 1 1 44%; min-height: 140px; overflow: hidden; }
+.uart-orchestrator-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--uart-border); flex-wrap: wrap; }
+.uart-orchestrator-title { font-size: 12px; font-weight: 600; }
+.uart-orchestrator-head .uart-button.is-primary { height: 26px; padding: 0 10px; font-size: 11.5px; }
+.uart-orchestrator-steps { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 4px 0 8px; }
 .uart-step {
   display: grid; grid-template-columns: 16px 168px minmax(0, 1fr) 76px 60px;
   gap: 8px; align-items: baseline;
@@ -2386,11 +2386,11 @@ const CSS = `
 .uart-history-row:nth-of-type(even) { background: color-mix(in srgb, var(--uart-surface-2) 45%, transparent); }
 .uart-history-row:hover { background: var(--uart-surface-2); }
 
-/* ── DUT page ───────────────────────────────────────────────────────────── */
-.uart-dut-progress { display: flex; align-items: center; gap: 8px; padding: 6px 12px 0; }
-.uart-dut-progress-track { flex: 1 1 auto; height: 4px; border-radius: 999px; background: var(--uart-surface-2); overflow: hidden; }
-.uart-dut-progress-fill { height: 100%; background: var(--uart-brand); transition: width .2s ease; }
-.uart-dut-progress-label { font-size: 11px; color: var(--uart-text-2); font-variant-numeric: tabular-nums; }
+/* ── Orchestrator page ───────────────────────────────────────────────────────────── */
+.uart-orchestrator-progress { display: flex; align-items: center; gap: 8px; padding: 6px 12px 0; }
+.uart-orchestrator-progress-track { flex: 1 1 auto; height: 4px; border-radius: 999px; background: var(--uart-surface-2); overflow: hidden; }
+.uart-orchestrator-progress-fill { height: 100%; background: var(--uart-brand); transition: width .2s ease; }
+.uart-orchestrator-progress-label { font-size: 11px; color: var(--uart-text-2); font-variant-numeric: tabular-nums; }
 .uart-cmd-search { width: 140px; height: 24px; font-size: 11.5px; }
 .uart-step-block { border-bottom: 1px solid color-mix(in srgb, var(--uart-border) 60%, transparent); }
 .uart-step.is-expandable { cursor: pointer; }

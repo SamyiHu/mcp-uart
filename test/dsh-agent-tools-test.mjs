@@ -34,7 +34,7 @@ const byName = new Map(tools.map((tool) => [tool.name, tool]))
 
 await check('exposes exactly three grouped tools', () => {
   assert(tools.length === 3, `expected 3 tools, got ${tools.length}`)
-  for (const name of ['uart_serial', 'uart_dut', 'uart_view']) {
+  for (const name of ['uart_serial', 'uart_orchestrator', 'uart_view']) {
     assert(byName.has(name), `missing tool ${name}`)
   }
 })
@@ -56,10 +56,10 @@ await check('serial tool covers the operational actions', () => {
   }
 })
 
-await check('dut tool covers the profile actions', () => {
-  const actions = byName.get('uart_dut').parameters.properties.action.enum
+await check('orchestrator tool covers the profile actions', () => {
+  const actions = byName.get('uart_orchestrator').parameters.properties.action.enum
   for (const action of ['list', 'connect', 'disconnect', 'run', 'smoke', 'status']) {
-    assert(actions.includes(action), `uart_dut is missing action ${action}`)
+    assert(actions.includes(action), `uart_orchestrator is missing action ${action}`)
   }
 })
 

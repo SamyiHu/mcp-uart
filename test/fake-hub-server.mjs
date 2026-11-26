@@ -8,12 +8,12 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { createHub } from '../dist/hub/server.js'
 import { FakeHubBackend } from './helpers/fake-hub-backend.mjs'
-import { FakeDutBackend } from './helpers/fake-dut-backend.mjs'
+import { FakeOrchestratorBackend } from './helpers/fake-orchestrator-backend.mjs'
 
 const port = Number(process.argv[2] || 8795)
 const discoveryFile = process.argv[3]
 const backend = new FakeHubBackend()
-const hub = await createHub({ backend, dut: new FakeDutBackend(backend), host: '127.0.0.1', port })
+const hub = await createHub({ backend, orchestrator: new FakeOrchestratorBackend(backend), host: '127.0.0.1', port })
 
 if (discoveryFile) {
   mkdirSync(dirname(discoveryFile), { recursive: true })

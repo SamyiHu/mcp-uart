@@ -1,5 +1,5 @@
 /**
- * DUT (device-under-test) profile types.
+ * Orchestrator (device-under-test) profile types.
  *
  * A profile is pure DATA describing how to talk to one chip's FT firmware:
  * serial settings, frame format (length + checksum algorithm), a table of
@@ -28,30 +28,30 @@ export interface FrameDescriptor {
  * numbers or hex strings ("0x5A") for readability in profile JSON files.
  *
  * Frame handshake protocol:
- *   send-frame → DUT echoes the frame → resend (handshake) → DUT sends result.
- * The DUT's Send_Read_N_Byte always READS the next frame before replying, so
+ *   send-frame → Orchestrator echoes the frame → resend (handshake) → Orchestrator sends result.
+ * The Orchestrator's Send_Read_N_Byte always READS the next frame before replying, so
  * every command needs its frame sent twice (dispatch + handshake).
  */
-export type DutActionBase =
+export type OrchestratorActionBase =
   | { type: "send-frame"; cmd: number | string; p1?: number | string; p2?: number | string }
   /**
-   * Wait for the DUT echo that byte-equals the dispatched frame, resending
-   * the frame periodically. Stale frames from a desynced DUT are skipped,
+   * Wait for the Orchestrator echo that byte-equals the dispatched frame, resending
+   * the frame periodically. Stale frames from a desynced Orchestrator are skipped,
    * which self-heals the pipeline.
    */
   | { type: "expect-echo"; timeoutMs: number; resendMs?: number }
-  /** Resend the last send-frame as the DUT's handshake (triggers the result). */
+  /** Resend the last send-frame as the Orchestrator's handshake (triggers the result). */
   | { type: "handshake" }
   /**
    * Robust result collection: repeatedly resend the handshake frame until one
    * new result frame arrives, or timeoutMs elapses. Absorbs variable test
    * durations (long tests hold the handshake unread; frames sent while the
-   * DUT is busy are simply lost and retried).
+   * Orchestrator is busy are simply lost and retried).
    */
   | { type: "get-result"; timeoutMs: number; retryMs?: number }
   | { type: "send-raw"; hex: string; note?: string }
   | { type: "wait"; ms: number }
-  /** Break pulse on our TX line = falling edge on the DUT wake pin (STOP/IDLE wake). */
+  /** Break pulse on our TX line = falling edge on the Orchestrator wake pin (STOP/IDLE wake). */
   | { type: "wake-pulse"; ms?: number }
   | { type: "collect-frames"; count: number; timeoutMs: number }
   /** Wait for raw bytes outside of valid frames (e.g. UART echo byte). */
@@ -67,7 +67,7 @@ export type DutActionBase =
   | {
       type: "repeat";
       times: number;
-      steps: DutAction[];
+      steps: OrchestratorAction[];
       abortOnFail?: boolean;
       logRepeat?: "aggregate" | "each";
     }
@@ -89,14 +89,14 @@ export type DutActionBase =
     };
 
 /** Runtime annotation fields (sequence log / baseline). */
-export type DutAction = DutActionBase & {
+export type OrchestratorAction = OrchestratorActionBase & {
   mark?: string;
   /** Marks this step as the recovery-time baseline (recoveryMs = match - this.atMs). */
   baseline?: boolean;
 };
 
-export interface DutJudge {
-  /** Collected frame 0 must byte-equal the dispatched frame (DUT echo). */
+export interface OrchestratorJudge {
+  /** Collected frame 0 must byte-equal the dispatched frame (Orchestrator echo). */
   echoMatches?: boolean;
   /** Collected frame[resultIdx] byte0 must equal the dispatched cmd byte. */
   resultEchoesCmd?: boolean;
@@ -110,12 +110,12 @@ export interface DutJudge {
   extraContains?: string;
 }
 
-export interface DutCommandDef {
+export interface OrchestratorCommandDef {
   name: string;
   /** Human-readable description shown to the AI agent. */
   title: string;
-  actions: DutAction[];
-  judge?: DutJudge;
+  actions: OrchestratorAction[];
+  judge?: OrchestratorJudge;
   /** Meaning of overridable p1/p2/cmd parameters. */
   params?: { cmd?: string; p1?: string; p2?: string };
   note?: string;
@@ -123,7 +123,7 @@ export interface DutCommandDef {
   fpgaSuitable?: boolean;
 }
 
-export interface DutProfile {
+export interface OrchestratorProfile {
   name: string;
   chip: string;
   description: string;
@@ -136,8 +136,8 @@ export interface DutProfile {
     wiring?: string;
   };
   frame: FrameDescriptor;
-  commands: DutCommandDef[];
-  /** Command names run by dut_smoke. */
+  commands: OrchestratorCommandDef[];
+  /** Command names run by orchestrator_smoke. */
   smoke?: string[];
   /**
    * Extra command names appended to the smoke run when the operator asks for
@@ -153,7 +153,7 @@ export interface ParsedFrame {
   timestamp: string;
 }
 
-export interface DutRunResult {
+export interface OrchestratorRunResult {
   command: string;
   title: string;
   verdict: "PASS" | "FAIL" | "REPORT" | "TIMEOUT";
@@ -165,8 +165,8 @@ export interface DutRunResult {
   note?: string;
 }
 
-/** One step log entry from dut_sequence. */
-export interface DutSequenceStepLog {
+/** One step log entry from orchestrator_sequence. */
+export interface OrchestratorStepLog {
   i: number;
   action: string;
   atMs: number;
@@ -185,12 +185,12 @@ export interface DutSequenceStepLog {
   times?: number;
 }
 
-export interface DutSequenceResult {
+export interface OrchestratorSequenceResult {
   ok: boolean;
   elapsedMs: number;
   stopped: null | "budget" | "aborted";
   abortReason?: string;
-  steps: DutSequenceStepLog[];
+  steps: OrchestratorStepLog[];
   summary: {
     firstRxLatencyMs?: number;
     recoveryMs?: number;
@@ -200,7 +200,7 @@ export interface DutSequenceResult {
   };
 }
 
-export interface DutSequenceOptions {
+export interface OrchestratorSequenceOptions {
   totalBudgetMs?: number;
   abortOnError?: boolean;
   captureFrames?: "match" | "all" | "none";

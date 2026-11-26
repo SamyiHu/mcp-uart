@@ -7,9 +7,9 @@ import { dirname, join } from "path";
 import { SerialManager } from "./serial-manager.js";
 import { createServer } from "./server.js";
 import { createSerialBackend } from "./hub/serial-backend.js";
-import { createDutBackend } from "./hub/dut-backend.js";
+import { createOrchestratorBackend } from "./hub/orchestrator-backend.js";
 import { createHubWithFallback, type HubListenResult } from "./hub/server.js";
-import { DutManager } from "./dut/manager.js";
+import { OrchestratorManager } from "./orchestrator/manager.js";
 
 /**
  * Where this process advertises its Hub URL.
@@ -58,9 +58,9 @@ function unpublishHub(): void {
 
 async function main() {
   // One SerialManager shared by MCP tools + optional in-process Hub UI; one
-  // DutManager too, so the panel's DUT page runs over the same session.
+  // OrchestratorManager too, so the panel's Orchestrator page runs over the same session.
   const manager = new SerialManager();
-  const dut = new DutManager(manager);
+  const orchestrator = new OrchestratorManager(manager);
 
   let hub: HubListenResult | null = null;
   const hubEnabled = process.env.UART_HUB !== "0";
@@ -70,7 +70,7 @@ async function main() {
     try {
       hub = await createHubWithFallback({
         backend: createSerialBackend(manager),
-        dut: createDutBackend(dut, manager),
+        orchestrator: createOrchestratorBackend(orchestrator, manager),
         preferredPort: preferred,
         portSpan: Number(process.env.UART_HUB_SPAN || "30"),
       });
@@ -95,7 +95,7 @@ async function main() {
 
   const server = createServer({
     manager,
-    dut,
+    orchestrator,
     onConnectionOpen: (id) => {
       hub?.attach(id);
       process.stderr.write(`Monitoring connection ${id} in Hub UI\n`);
