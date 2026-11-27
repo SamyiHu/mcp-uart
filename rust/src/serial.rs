@@ -43,6 +43,15 @@ pub struct SerialManager {
     seq: AtomicU64,
 }
 
+/// Re-decode buffered messages from their raw bytes after an encoding change.
+/// Kept as a free function so it can be tested without a real serial port.
+pub(crate) fn redecode_messages(messages: &mut [SerialMessage], encoding: &str) {
+    for message in messages.iter_mut() {
+        let raw_bytes = crate::encoding::parse_hex(&message.raw);
+        message.data = crate::encoding::decode(&raw_bytes, encoding);
+    }
+}
+
 impl SerialManager {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
@@ -162,10 +171,9 @@ impl SerialManager {
             let manager = Arc::clone(self);
             let id = id.clone();
             let stop = Arc::clone(&stop);
-            let encoding = config.encoding.clone();
             let buffer_size = config.buffer_size;
             thread::spawn(move || {
-                manager.read_loop(id, reader_port, framing, encoding, buffer_size, stop)
+                manager.read_loop(id, reader_port, framing, buffer_size, stop)
             })
         };
 
@@ -202,7 +210,6 @@ impl SerialManager {
         id: String,
         mut port: Box<dyn SerialPort>,
         framing: Framing,
-        encoding: String,
         buffer_size: usize,
         stop: Arc<AtomicBool>,
     ) {
@@ -220,7 +227,7 @@ impl SerialManager {
                     self.dispatch_raw(&id, bytes);
                     let frames = framer.push(bytes, false);
                     for frame in frames {
-                        self.record(&id, &frame, &encoding, buffer_size);
+                        self.record(&id, &frame, buffer_size);
                     }
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {
@@ -228,7 +235,7 @@ impl SerialManager {
                     let gap = clock.idle_ms();
                     if gap >= 10 && gap != u64::MAX {
                         for frame in framer.push(&[], true) {
-                            self.record(&id, &frame, &encoding, buffer_size);
+                            self.record(&id, &frame, buffer_size);
                         }
                         clock.mark();
                     }
@@ -243,7 +250,7 @@ impl SerialManager {
         }
 
         for frame in framer.flush() {
-            self.record(&id, &frame, &encoding, buffer_size);
+            self.record(&id, &frame, buffer_size);
         }
 
         let mut guard = self.inner.lock().unwrap();
@@ -253,11 +260,18 @@ impl SerialManager {
         }
     }
 
-    fn record(&self, id: &str, bytes: &[u8], encoding: &str, buffer_size: usize) {
+    /// Decode a frame using the connection's CURRENT encoding, held in shared
+    /// state. Reading it here (instead of a value captured at open) means
+    /// `reconfigure(encoding)` takes effect on the very next frame.
+    fn record(&self, id: &str, bytes: &[u8], buffer_size: usize) {
+        let encoding = self.inner.lock().unwrap()
+            .get(id)
+            .map(|c| c.config.encoding.clone())
+            .unwrap_or_else(|| "utf8".into());
         let message = SerialMessage {
             timestamp: crate::util::now_iso(),
             connection_id: id.to_string(),
-            data: encoding::decode(bytes, encoding),
+            data: encoding::decode(bytes, &encoding),
             raw: encoding::hex_upper(bytes),
             length: bytes.len(),
             direction: Direction::Rx,
@@ -336,8 +350,18 @@ impl SerialManager {
     pub fn reconfigure(&self, id: &str, updates: &serde_json::Value) -> Result<ConnectionInfo, String> {
         let mut guard = self.inner.lock().unwrap();
         let conn = guard.get_mut(id).ok_or_else(|| format!("connection {id} not found"))?;
+        // When the encoding changes, re-decode every buffered frame from its
+        // raw bytes so the whole tape (not just new frames) shows the new text.
+        let mut encoding_changed = false;
         if let Some(v) = updates.get("encoding").and_then(|v| v.as_str()) {
-            conn.config.encoding = v.to_string();
+            if conn.config.encoding != v {
+                conn.config.encoding = v.to_string();
+                encoding_changed = true;
+            }
+        }
+        if encoding_changed {
+            let enc = conn.config.encoding.clone();
+            redecode_messages(conn.messages.make_contiguous(), &enc);
         }
         // Framing changes need a fresh framer; restarting the reader thread is
         // the simple, correct way to get one.
@@ -406,5 +430,44 @@ impl Conn {
             last_activity: self.last_activity.clone(),
             error: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::Direction;
+
+    fn frame(raw: &str) -> SerialMessage {
+        let bytes = crate::encoding::parse_hex(raw);
+        SerialMessage {
+            timestamp: "2026-01-01T00:00:00.000Z".into(),
+            connection_id: "c".into(),
+            data: crate::encoding::decode(&bytes, "utf8"),
+            raw: raw.into(),
+            length: bytes.len(),
+            direction: Direction::Rx,
+        }
+    }
+
+    #[test]
+    fn gbk_bytes_misdecoded_as_utf8_then_redecoded() {
+        // B2 E2 is "测" in GBK; as UTF-8 it becomes the replacement char.
+        let mut messages = vec![frame("B2E2")];
+        assert_ne!(messages[0].data, "测", "utf8 decode must be wrong");
+        assert!(messages[0].data.contains('\u{fffd}'), "utf8 decode yields U+FFFD");
+
+        redecode_messages(&mut messages, "gbk");
+        assert_eq!(messages[0].data, "测", "re-decode from raw must recover GBK text");
+        assert_eq!(messages[0].raw, "B2E2", "raw bytes stay untouched");
+    }
+
+    #[test]
+    fn redecode_is_repeatable() {
+        let mut messages = vec![frame("B2E2")];
+        redecode_messages(&mut messages, "gbk");
+        let first = messages[0].data.clone();
+        redecode_messages(&mut messages, "gbk");
+        assert_eq!(messages[0].data, first);
     }
 }
